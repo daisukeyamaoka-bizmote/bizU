@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 
 const navItems = [
   { href: '/', label: 'ダッシュボード', icon: '📊' },
+  { href: '/projects', label: 'プロジェクト', icon: '📋' },
   { href: '/contacts', label: 'コンタクト管理', icon: '👤' },
   { href: '/letters', label: '手紙一覧', icon: '✉️' },
   { href: '/letters/new', label: '手紙を生成', icon: '✍️' },
@@ -33,7 +34,7 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
           return (
             <Link
               key={item.href}
