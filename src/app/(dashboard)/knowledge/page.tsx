@@ -310,7 +310,7 @@ export default function KnowledgePage() {
                 ファイルを選択
                 <input
                   type="file"
-                  accept=".pdf,.txt,.csv,.md,.doc,.docx"
+                  accept=".pdf,.txt,.csv,.md,.doc,.docx,.xlsx,.xls,.pptx"
                   multiple
                   className="hidden"
                   onChange={addFiles}

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import * as XLSX from 'xlsx'
+import mammoth from 'mammoth'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -39,6 +41,58 @@ case_studyカテゴリの場合は、case_studyフィールドに以下の形式
 
 テキスト全体から、営業活動に使える情報をすべて抽出してください。1つのソースから複数のナレッジを抽出してOKです。`
 
+// エクセルファイルからテキストを抽出
+function extractTextFromExcel(buffer: ArrayBuffer): string {
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  const lines: string[] = []
+
+  for (const sheetName of workbook.SheetNames) {
+    lines.push(`【シート: ${sheetName}】`)
+    const sheet = workbook.Sheets[sheetName]
+    const data = XLSX.utils.sheet_to_csv(sheet, { RS: '\n' })
+    lines.push(data)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+// Word(.docx)ファイルからテキストを抽出
+async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
+  const result = await mammoth.extractRawText({ arrayBuffer: buffer })
+  return result.value
+}
+
+// パワポ(.pptx)ファイルからテキストを抽出
+// pptxはZIP形式なので、xlsxライブラリのZIP機能で中のXMLを読む
+async function extractTextFromPptx(buffer: ArrayBuffer): Promise<string> {
+  // pptx is a ZIP containing XML files for each slide
+  const JSZip = (await import('jszip')).default
+  const zip = await JSZip.loadAsync(buffer)
+  const lines: string[] = []
+  let slideNum = 1
+
+  // Get all slide XML files sorted
+  const slideFiles = Object.keys(zip.files)
+    .filter(name => name.match(/ppt\/slides\/slide\d+\.xml/))
+    .sort()
+
+  for (const fileName of slideFiles) {
+    const content = await zip.files[fileName].async('string')
+    // Extract text from XML (between <a:t> tags)
+    const texts = content.match(/<a:t>([^<]*)<\/a:t>/g)
+    if (texts) {
+      lines.push(`【スライド ${slideNum}】`)
+      const slideTexts = texts.map(t => t.replace(/<\/?a:t>/g, ''))
+      lines.push(slideTexts.join(' '))
+      lines.push('')
+    }
+    slideNum++
+  }
+
+  return lines.join('\n')
+}
+
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get('content-type') ?? ''
@@ -77,9 +131,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'ファイルが見つかりません' }, { status: 400 })
       }
       sourceName = file.name
+      const arrayBuffer = await file.arrayBuffer()
+      const ext = file.name.split('.').pop()?.toLowerCase()
 
-      if (file.type === 'application/pdf') {
-        const arrayBuffer = await file.arrayBuffer()
+      // PDF → Claude API で直接読み取り
+      if (file.type === 'application/pdf' || ext === 'pdf') {
         const base64 = Buffer.from(arrayBuffer).toString('base64')
 
         const message = await anthropic.messages.create({
@@ -105,16 +161,37 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: '抽出結果の解析に失敗しました' }, { status: 500 })
         }
         const result = JSON.parse(jsonMatch[0])
-        return NextResponse.json({
-          ...result,
-          source_type: 'pdf',
-          source_name: sourceName,
-        })
+        return NextResponse.json({ ...result, source_type: 'pdf', source_name: sourceName })
       }
 
-      textContent = await file.text()
-      textContent = textContent.slice(0, 15000)
-      sourceType = 'file'
+      // エクセル (.xlsx, .xls)
+      if (ext === 'xlsx' || ext === 'xls' ||
+          file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+          file.type === 'application/vnd.ms-excel') {
+        textContent = extractTextFromExcel(arrayBuffer)
+        textContent = textContent.slice(0, 15000)
+        sourceType = 'file'
+      }
+      // ワード (.docx)
+      else if (ext === 'docx' ||
+               file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        textContent = await extractTextFromDocx(arrayBuffer)
+        textContent = textContent.slice(0, 15000)
+        sourceType = 'file'
+      }
+      // パワポ (.pptx)
+      else if (ext === 'pptx' ||
+               file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+        textContent = await extractTextFromPptx(arrayBuffer)
+        textContent = textContent.slice(0, 15000)
+        sourceType = 'file'
+      }
+      // テキスト系 (.txt, .csv, .md)
+      else {
+        textContent = await file.text()
+        textContent = textContent.slice(0, 15000)
+        sourceType = 'file'
+      }
     }
 
     if (!textContent) {
