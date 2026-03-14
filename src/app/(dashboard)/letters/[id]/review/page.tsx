@@ -15,6 +15,19 @@ type Source = {
   freshness: string
 }
 
+type FactCheckResult = {
+  index: number
+  verdict: 'ok' | 'caution' | 'ng'
+  reason: string
+  suggestion?: string
+}
+
+const VERDICT_CONFIG = {
+  ok: { label: 'OK', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', icon: '\u2705' },
+  caution: { label: '要確認', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', icon: '\u26A0\uFE0F' },
+  ng: { label: '要修正', color: 'text-red-700', bg: 'bg-red-50 border-red-200', icon: '\u274C' },
+} as const
+
 type Letter = {
   id: string
   body_text: string
@@ -57,6 +70,9 @@ export default function ReviewPage() {
   const [editedBody, setEditedBody] = useState('')
   const [editingSourceIndex, setEditingSourceIndex] = useState<number | null>(null)
   const [editedFact, setEditedFact] = useState('')
+  const [factCheckResults, setFactCheckResults] = useState<FactCheckResult[]>([])
+  const [factChecking, setFactChecking] = useState(false)
+  const [factCheckDone, setFactCheckDone] = useState(false)
 
   const sourceRefs = useRef<Record<number, HTMLDivElement | null>>({})
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -85,9 +101,51 @@ export default function ReviewPage() {
     setLoading(false)
   }, [letterId])
 
+  const runFactCheck = useCallback(async (letterData: Letter, sourcesData: Source[]) => {
+    if (sourcesData.length === 0 || letterData.is_approved) return
+    setFactChecking(true)
+    try {
+      const contact = letterData.contacts
+      const company = contact && 'target_companies' in contact
+        ? (Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies)
+        : null
+      const res = await fetch('/api/fact-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          letterBody: letterData.body_text,
+          sources: sourcesData.map(s => ({
+            index: s.index,
+            fact: s.fact,
+            source_name: s.source_name,
+            source_url: s.source_url,
+            fetched_at: s.fetched_at,
+          })),
+          contactCompany: (company as { name: string } | null)?.name ?? '',
+          contactName: contact?.full_name ?? '',
+        }),
+      })
+      const data = await res.json()
+      if (data.results) {
+        setFactCheckResults(data.results)
+      }
+    } catch {
+      // ファクトチェック失敗は非致命的
+    }
+    setFactChecking(false)
+    setFactCheckDone(true)
+  }, [])
+
   useEffect(() => {
     loadLetter()
   }, [loadLetter])
+
+  // レター読み込み後に自動ファクトチェック
+  useEffect(() => {
+    if (letter && sources.length > 0 && !factCheckDone && !factChecking && !letter.is_approved) {
+      runFactCheck(letter, sources)
+    }
+  }, [letter, sources, factCheckDone, factChecking, runFactCheck])
 
   function toggleVerified(index: number) {
     setSources(prev => prev.map(s =>
@@ -345,6 +403,37 @@ export default function ReviewPage() {
             使用した情報とソース
           </h2>
 
+          {/* AIファクトチェック状態 */}
+          {factChecking && (
+            <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-900" />
+                <p className="text-sm font-medium text-neutral-700">AIがファクトチェック中...</p>
+              </div>
+              <p className="mt-1 text-xs text-neutral-400">各ソースの事実を自動検証しています（10秒程度）</p>
+            </div>
+          )}
+
+          {/* AIファクトチェックサマリー */}
+          {factCheckDone && factCheckResults.length > 0 && (
+            <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-3">
+              <p className="text-xs font-medium text-neutral-500">AIファクトチェック結果</p>
+              <div className="mt-1.5 flex gap-4 text-xs">
+                <span className="text-emerald-600">OK: {factCheckResults.filter(r => r.verdict === 'ok').length}件</span>
+                <span className="text-amber-600">要確認: {factCheckResults.filter(r => r.verdict === 'caution').length}件</span>
+                <span className="text-red-600">要修正: {factCheckResults.filter(r => r.verdict === 'ng').length}件</span>
+              </div>
+              {!factChecking && (
+                <button
+                  onClick={() => { setFactCheckDone(false); setFactCheckResults([]); if (letter) runFactCheck(letter, sources) }}
+                  className="mt-2 text-xs text-neutral-400 hover:text-neutral-600 hover:underline"
+                >
+                  再チェック
+                </button>
+              )}
+            </div>
+          )}
+
           {sources.length === 0 ? (
             <p className="mt-4 text-sm text-neutral-500">ソース情報がありません（生成時にソースが未付与）</p>
           ) : (
@@ -352,6 +441,8 @@ export default function ReviewPage() {
               {sources.map((source) => {
                 const config = FRESHNESS_CONFIG[source.freshness as keyof typeof FRESHNESS_CONFIG] ?? FRESHNESS_CONFIG.fresh
                 const daysSince = Math.floor((Date.now() - new Date(source.fetched_at).getTime()) / (1000 * 60 * 60 * 24))
+                const factCheck = factCheckResults.find(r => r.index === source.index)
+                const verdictConfig = factCheck ? VERDICT_CONFIG[factCheck.verdict] : null
                 return (
                   <div
                     key={source.index}
@@ -359,7 +450,11 @@ export default function ReviewPage() {
                     className={`rounded-lg border p-4 transition-all ${
                       source.is_verified
                         ? 'border-emerald-200 bg-emerald-50/50'
-                        : 'border-neutral-200 bg-white'
+                        : factCheck?.verdict === 'ng'
+                          ? 'border-red-200 bg-red-50/30'
+                          : factCheck?.verdict === 'caution'
+                            ? 'border-amber-200 bg-amber-50/30'
+                            : 'border-neutral-200 bg-white'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -395,7 +490,23 @@ export default function ReviewPage() {
                           </div>
                         </div>
                       </div>
+                      {/* AI判定バッジ */}
+                      {verdictConfig && (
+                        <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${verdictConfig.bg} ${verdictConfig.color}`}>
+                          {verdictConfig.icon} {verdictConfig.label}
+                        </span>
+                      )}
                     </div>
+
+                    {/* AI判定理由 */}
+                    {factCheck && (
+                      <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${verdictConfig?.bg ?? 'bg-neutral-50 border-neutral-200'}`}>
+                        <p className={`font-medium ${verdictConfig?.color ?? 'text-neutral-600'}`}>AI判定: {factCheck.reason}</p>
+                        {factCheck.suggestion && (
+                          <p className="mt-1 text-neutral-600">修正提案: {factCheck.suggestion}</p>
+                        )}
+                      </div>
+                    )}
 
                     <div className="mt-3 flex items-center gap-2">
                       {source.source_url && (
