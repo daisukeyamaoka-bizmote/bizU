@@ -9,21 +9,6 @@ interface AnthropicResponse {
   content: Array<{ type: string; text?: string }>
 }
 
-async function fetchWithProxy(url: string, init: RequestInit): Promise<Response> {
-  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
-  if (proxy) {
-    // Use undici with proxy only in Node.js environments (local dev)
-    try {
-      const { ProxyAgent, fetch: undiFetch } = await import('undici')
-      const dispatcher = new ProxyAgent(proxy)
-      return undiFetch(url, { ...init, dispatcher }) as unknown as Response
-    } catch {
-      // undici not available, fall through to native fetch
-    }
-  }
-  return fetch(url, init)
-}
-
 export async function callClaude(options: {
   messages: AnthropicMessage[]
   system?: string
@@ -32,7 +17,7 @@ export async function callClaude(options: {
 }): Promise<AnthropicResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY が設定されていません。デプロイ環境の環境変数を確認してください。')
+    throw new Error('ANTHROPIC_API_KEY が設定されていません')
   }
 
   const body: Record<string, unknown> = {
@@ -44,7 +29,7 @@ export async function callClaude(options: {
     body.system = options.system
   }
 
-  const res = await fetchWithProxy(ANTHROPIC_API_URL, {
+  const res = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
