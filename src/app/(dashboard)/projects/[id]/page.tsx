@@ -251,6 +251,22 @@ export default function ProjectDetailPage() {
       knowledgeContext = knowledge ?? []
     }
 
+    // Web検索で企業の最新情報を取得
+    let collectedContext = ''
+    if (company?.name) {
+      try {
+        const infoRes = await fetch('/api/collect-info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyName: company.name }),
+        })
+        const infoData = await infoRes.json()
+        collectedContext = infoData.context ?? ''
+      } catch {
+        // Web検索に失敗しても手紙生成は続行
+      }
+    }
+
     // Generate letter
     const res = await fetch('/api/generate-letter', {
       method: 'POST',
@@ -267,7 +283,7 @@ export default function ProjectDetailPage() {
         caseStudy,
         whyYouAngle: project.why_you_angle ?? '採用強化',
         sendTrigger: project.send_trigger ?? '',
-        collectedContext: '',
+        collectedContext,
         knowledgeContext,
       }),
     })

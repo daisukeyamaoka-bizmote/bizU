@@ -128,6 +128,15 @@ export default function NewLetterPage() {
     const caseStudy = caseStudies.find(cs => cs.id === selectedCaseStudy)
     const client = clients.find(c => c.id === selectedClient)
 
+    // ナレッジコンテキストを取得
+    const supabase = createClient()
+    const { data: knowledge } = await supabase
+      .from('knowledge_items')
+      .select('category, title, content')
+      .eq('client_id', selectedClient)
+      .limit(10)
+    const knowledgeContext = knowledge ?? []
+
     try {
       const res = await fetch('/api/generate-letter', {
         method: 'POST',
@@ -139,6 +148,7 @@ export default function NewLetterPage() {
           whyYouAngle,
           sendTrigger,
           collectedContext,
+          knowledgeContext,
         }),
       })
       const data = await res.json()
