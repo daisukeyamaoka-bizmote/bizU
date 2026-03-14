@@ -12,6 +12,7 @@ import {
   EnvelopeSimple,
   ChartBar,
   TrendUp,
+  ChartLineUp,
   SignOut,
 } from '@phosphor-icons/react'
 
@@ -23,6 +24,7 @@ const navItems = [
   { href: '/letters', label: '手紙一覧', icon: EnvelopeSimple },
   { href: '/cases', label: 'ケーススタディ', icon: ChartBar },
   { href: '/reactions', label: '反応記録', icon: TrendUp },
+  { href: '/dashboard/intelligence', label: 'インテリジェンス', icon: ChartLineUp },
 ]
 
 export default function Sidebar() {
