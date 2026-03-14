@@ -13,7 +13,7 @@ type MappingField = 'company_name' | 'full_name' | 'last_name' | 'first_name' | 
 type DuplicateItem = {
   rowIndex: number
   level: 'exact' | 'update' | 'company'
-  existingContact: { id: string; full_name: string; company_name: string; title: string | null; department: string | null; address: string | null }
+  existingContact: { id: string; full_name: string; company_name: string; title: string | null; department: string | null; address: string | null; company_id: string }
   newData: { full_name: string; company_name: string; title: string; department: string; address: string }
   diffs: string[]
   action: 'skip' | 'update' | 'add'
@@ -191,10 +191,10 @@ export default function SmartImportPage() {
       return header ? (row[header] ?? '').toString().trim() : ''
     }
 
-    // Fetch all existing contacts
+    // Fetch all existing contacts with company details for refresh comparison
     const { data: existingContacts } = await supabase
       .from('contacts')
-      .select('id, full_name, department, title, address, company_id, target_companies(name)')
+      .select('id, full_name, department, title, address, company_id, target_companies(id, name, employee_scale, revenue_scale, website, phone, founded_date, fiscal_month, representative_email)')
       .eq('is_active', true)
 
     // Build lookup maps for O(1) matching instead of O(n*m)
@@ -255,6 +255,23 @@ export default function SmartImportPage() {
           if (newDept && newDept !== (ec.department ?? '') && ec.department) diffs.push(`部署: 「${ec.department}」→「${newDept}」`)
           if (newAddress && newAddress !== (ec.address ?? '') && ec.address) diffs.push(`住所: 変更あり`)
 
+          // 企業レベルのフィールド差分も検出（リストリフレッシュ）
+          const newEmpScale = getValue(row, 'employee_scale')
+          const newRevScale = getValue(row, 'revenue_scale')
+          const newWebsite = getValue(row, 'website')
+          const newPhone = getValue(row, 'phone')
+          const newFoundedDate = getValue(row, 'founded_date')
+          const newFiscalMonth = getValue(row, 'fiscal_month')
+          const newRepEmail = getValue(row, 'representative_email')
+
+          if (newEmpScale && newEmpScale !== (company?.employee_scale ?? '')) diffs.push(`従業員数: 「${company?.employee_scale ?? '未設定'}」→「${newEmpScale}」`)
+          if (newRevScale && newRevScale !== (company?.revenue_scale ?? '')) diffs.push(`売上: 「${company?.revenue_scale ?? '未設定'}」→「${newRevScale}」`)
+          if (newWebsite && newWebsite !== (company?.website ?? '')) diffs.push(`HP: 変更あり`)
+          if (newPhone && newPhone !== (company?.phone ?? '')) diffs.push(`電話: 変更あり`)
+          if (newFoundedDate && newFoundedDate !== (company?.founded_date ?? '')) diffs.push(`設立年月日: 変更あり`)
+          if (newFiscalMonth && newFiscalMonth !== (company?.fiscal_month ?? '')) diffs.push(`決算月: 変更あり`)
+          if (newRepEmail && newRepEmail !== (company?.representative_email ?? '')) diffs.push(`代表メール: 変更あり`)
+
           if (sentContactIds.has(ec.id)) {
             diffs.push(`直近${excludeSentDays}日以内に送付済み`)
           }
@@ -269,6 +286,7 @@ export default function SmartImportPage() {
               title: ec.title,
               department: ec.department,
               address: ec.address,
+              company_id: ec.company_id,
             },
             newData: {
               full_name: fullName,
@@ -293,6 +311,7 @@ export default function SmartImportPage() {
                 title: ec.title,
                 department: ec.department,
                 address: ec.address,
+                company_id: ec.company_id,
               },
               newData: {
                 full_name: fullName,
@@ -397,6 +416,7 @@ export default function SmartImportPage() {
         }
 
         if (dupe.action === 'update' && (dupe.level === 'exact' || dupe.level === 'update')) {
+          // コンタクトレベルの更新
           const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() }
           const newTitle = getValue(row, 'title')
           const newDept = getValue(row, 'department')
@@ -411,6 +431,30 @@ export default function SmartImportPage() {
             .from('contacts')
             .update(updateData)
             .eq('id', dupe.existingContact.id)
+
+          // 企業レベルのフィールドもリフレッシュ（新しいデータを正とする）
+          const companyRefresh: Record<string, string> = {}
+          const empScale = getValue(row, 'employee_scale')
+          const revScale = getValue(row, 'revenue_scale')
+          const website = getValue(row, 'website')
+          const phone = getValue(row, 'phone')
+          const foundedDate = getValue(row, 'founded_date')
+          const fiscalMonth = getValue(row, 'fiscal_month')
+          const repEmail = getValue(row, 'representative_email')
+          if (empScale) companyRefresh.employee_scale = empScale
+          if (revScale) companyRefresh.revenue_scale = revScale
+          if (website) companyRefresh.website = website
+          if (phone) companyRefresh.phone = phone
+          if (foundedDate) companyRefresh.founded_date = foundedDate
+          if (fiscalMonth) companyRefresh.fiscal_month = fiscalMonth
+          if (repEmail) companyRefresh.representative_email = repEmail
+
+          if (Object.keys(companyRefresh).length > 0) {
+            await supabase
+              .from('target_companies')
+              .update({ ...companyRefresh, updated_at: new Date().toISOString() })
+              .eq('id', dupe.existingContact.company_id)
+          }
 
           if (error) {
             errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 更新エラー - ${error.message}` })
