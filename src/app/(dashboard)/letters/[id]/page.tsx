@@ -110,6 +110,9 @@ export default async function LetterDetailPage({
                         {r.next_action_date ? ` (${r.next_action_date})` : ''}
                       </p>
                     )}
+                    {r.next_action_log && (
+                      <p className="mt-1 text-xs text-neutral-400">根拠: {r.next_action_log}</p>
+                    )}
                   </div>
                 ))}
               </div>

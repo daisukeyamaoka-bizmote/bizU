@@ -13,6 +13,7 @@ type ReactionRow = {
   memo: string | null
   next_action: string | null
   next_action_date: string | null
+  next_action_log: string | null
   contact_name: string
 }
 
@@ -29,7 +30,7 @@ export default function ReactionsPage() {
     const { data } = await supabase
       .from('reactions')
       .select(`
-        id, letter_id, reaction_type, reacted_at, days_to_react, memo, next_action, next_action_date,
+        id, letter_id, reaction_type, reacted_at, days_to_react, memo, next_action, next_action_date, next_action_log,
         letters(contacts(full_name))
       `)
       .order('reacted_at', { ascending: false })
@@ -49,6 +50,7 @@ export default function ReactionsPage() {
         memo: r.memo,
         next_action: r.next_action,
         next_action_date: r.next_action_date,
+        next_action_log: r.next_action_log ?? null,
         contact_name: contact?.full_name ?? '-',
       }
     })
@@ -104,8 +106,11 @@ export default function ReactionsPage() {
                     {r.days_to_react !== null ? `${r.days_to_react}日` : '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-neutral-600">
-                    {r.next_action ?? '-'}
-                    {r.next_action_date ? ` (${r.next_action_date})` : ''}
+                    <span>{r.next_action ?? '-'}</span>
+                    {r.next_action_date ? <span className="text-neutral-400"> ({r.next_action_date})</span> : ''}
+                    {r.next_action_log && (
+                      <p className="mt-0.5 text-xs text-neutral-400">{r.next_action_log}</p>
+                    )}
                   </td>
                   <td className="max-w-xs truncate px-4 py-3 text-sm text-neutral-600">{r.memo ?? '-'}</td>
                 </tr>
