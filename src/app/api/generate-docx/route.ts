@@ -7,7 +7,7 @@ import {
   AlignmentType,
 } from 'docx'
 
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 
 export async function POST(request: Request) {
   try {
@@ -125,13 +125,12 @@ export async function POST(request: Request) {
       ],
     })
 
-    const buffer = await Packer.toBuffer(doc)
+    const blob = await Packer.toBlob(doc)
 
     const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
     const fileName = `${clientName}手紙施策_${yyyymm}_${contact.company_name} ${contact.department ?? ''} ${contact.title ?? ''} ${contact.full_name} 様.docx`
 
-    const uint8 = new Uint8Array(buffer)
-    return new NextResponse(uint8, {
+    return new NextResponse(blob, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
