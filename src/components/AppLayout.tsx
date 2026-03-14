@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Sidebar from './Sidebar'
+import HelpOverlay from './HelpOverlay'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -33,6 +34,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {displayChildren}
         </div>
       </main>
+      <HelpOverlay />
     </div>
   )
 }

@@ -148,21 +148,6 @@ export default async function DashboardPage() {
     .order('info_acquired_at', { ascending: true })
     .limit(5)
 
-  // ===== 3ステップ用カウント =====
-  const { count: contactCount } = await supabase
-    .from('contacts')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_active', true)
-
-  const { count: knowledgeCount } = await supabase
-    .from('knowledge_items')
-    .select('*', { count: 'exact', head: true })
-
-  const { count: projectCount } = await supabase
-    .from('projects')
-    .select('*', { count: 'exact', head: true })
-    .in('status', ['draft', 'active'])
-
   return (
     <div>
       <h1 className="text-2xl font-bold text-neutral-900">ダッシュボード</h1>
@@ -242,39 +227,6 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* 3ステップガイド */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-neutral-900">手紙作成の流れ</h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <StepCard
-            step={1}
-            title="対象リストを登録"
-            description="CSVで企業名・担当者情報をインポート。リストさえあればすぐに始められます。"
-            href="/contacts/import"
-            cta="リストをインポート"
-            count={contactCount ?? 0}
-            countLabel="件のコンタクト"
-          />
-          <StepCard
-            step={2}
-            title="ナレッジを追加"
-            description="対象サービスの資料・URL・PDFを登録。プロダクトの優位性をAIが学習します。"
-            href="/knowledge"
-            cta="ナレッジを管理"
-            count={knowledgeCount ?? 0}
-            countLabel="件のナレッジ"
-          />
-          <StepCard
-            step={3}
-            title="手紙を作成"
-            description="5社ずつ優先順位をつけて作成。企業IR・中計・人事異動を自動リサーチし、個別化された手紙を生成。"
-            href="/projects"
-            cta="プロジェクトへ"
-            count={projectCount ?? 0}
-            countLabel="件のプロジェクト"
-          />
-        </div>
-      </div>
     </div>
   )
 }
@@ -343,41 +295,3 @@ function ActionAlert({
   )
 }
 
-function StepCard({
-  step,
-  title,
-  description,
-  href,
-  cta,
-  count,
-  countLabel,
-}: {
-  step: number
-  title: string
-  description: string
-  href: string
-  cta: string
-  count: number
-  countLabel: string
-}) {
-  return (
-    <div className="flex flex-col rounded-lg border border-neutral-200 bg-white p-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-sm font-bold text-white">
-          {step}
-        </span>
-        <h3 className="text-base font-semibold text-neutral-900">{title}</h3>
-      </div>
-      <p className="mt-3 flex-1 text-sm leading-relaxed text-neutral-600">{description}</p>
-      <div className="mt-4 flex items-center justify-between">
-        <span className="text-sm text-neutral-500">{count}{countLabel}</span>
-        <Link
-          href={href}
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-        >
-          {cta}
-        </Link>
-      </div>
-    </div>
-  )
-}
