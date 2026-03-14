@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import * as XLSX from 'xlsx'
 import mammoth from 'mammoth'
 
+export const runtime = 'nodejs'
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
@@ -223,6 +225,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('Knowledge extraction error:', error)
-    return NextResponse.json({ error: 'ナレッジの抽出に失敗しました' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: `ナレッジの抽出に失敗しました: ${message}` }, { status: 500 })
   }
 }

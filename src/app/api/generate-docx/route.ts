@@ -7,6 +7,8 @@ import {
   AlignmentType,
 } from 'docx'
 
+export const runtime = 'nodejs'
+
 export async function POST(request: Request) {
   try {
     const { contact, clientName, bodyText } = await request.json()

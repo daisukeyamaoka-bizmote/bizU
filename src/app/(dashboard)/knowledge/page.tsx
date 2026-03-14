@@ -342,7 +342,7 @@ export default function KnowledgePage() {
                     </span>
                     <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
                     {s.status === 'done' && <span className="text-xs text-green-600">{s.results.length}件</span>}
-                    {s.status === 'error' && <span className="text-xs text-red-600">{s.error}</span>}
+                    {s.status === 'error' && <span className="max-w-xs truncate text-xs text-red-600" title={s.error}>{s.error}</span>}
                     <button onClick={() => removeSource(s.id)} className="text-xs text-gray-400 hover:text-red-500">×</button>
                   </div>
                 ))}
