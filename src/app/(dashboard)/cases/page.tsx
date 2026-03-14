@@ -14,6 +14,15 @@ type CaseStudyRow = {
   availability: string
 }
 
+type ExtractedCaseStudy = {
+  company_name: string
+  industry: string
+  challenge_tags: string[]
+  result_summary: string
+  recommended_roles?: string[]
+  recommended_industries?: string[]
+}
+
 export default function CasesPage() {
   const [cases, setCases] = useState<CaseStudyRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,6 +36,13 @@ export default function CasesPage() {
   const [formChallengeTags, setFormChallengeTags] = useState<string[]>([])
   const [formResultSummary, setFormResultSummary] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Auto-extract state
+  const [showExtract, setShowExtract] = useState(false)
+  const [extractUrl, setExtractUrl] = useState('')
+  const [extracting, setExtracting] = useState(false)
+  const [extracted, setExtracted] = useState<ExtractedCaseStudy[]>([])
+  const [extractError, setExtractError] = useState('')
 
   useEffect(() => {
     loadCases()
@@ -47,7 +63,6 @@ export default function CasesPage() {
       .select('id, company_name, industry, challenge_tags, result_summary, availability, client_id')
       .order('created_at', { ascending: false })
 
-    // Fetch client names
     const clientIds = [...new Set((data ?? []).map(cs => cs.client_id).filter(Boolean))]
     const { data: clientsData } = clientIds.length > 0
       ? await supabase.from('clients').select('id, name').in('id', clientIds as string[])
@@ -85,21 +100,220 @@ export default function CasesPage() {
     loadCases()
   }
 
+  // URL から自動抽出
+  async function handleExtractFromUrl() {
+    if (!extractUrl.trim()) return
+    setExtracting(true)
+    setExtractError('')
+    setExtracted([])
+
+    try {
+      const res = await fetch('/api/extract-case-study', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: extractUrl }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setExtractError(data.error)
+      } else {
+        setExtracted(data.case_studies ?? [])
+      }
+    } catch {
+      setExtractError('抽出に失敗しました')
+    }
+    setExtracting(false)
+  }
+
+  // ファイルから自動抽出
+  async function handleExtractFromFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setExtracting(true)
+    setExtractError('')
+    setExtracted([])
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/extract-case-study', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (data.error) {
+        setExtractError(data.error)
+      } else {
+        setExtracted(data.case_studies ?? [])
+      }
+    } catch {
+      setExtractError('抽出に失敗しました')
+    }
+    setExtracting(false)
+  }
+
+  // 抽出結果を一括登録
+  async function handleSaveExtracted(cs: ExtractedCaseStudy) {
+    const supabase = createClient()
+    await supabase.from('case_studies').insert({
+      client_id: formClientId,
+      company_name: cs.company_name,
+      industry: cs.industry,
+      challenge_tags: cs.challenge_tags,
+      result_summary: cs.result_summary,
+      recommended_roles: cs.recommended_roles ?? [],
+      recommended_industries: cs.recommended_industries ?? [],
+    })
+    setExtracted(prev => prev.filter(item => item.company_name !== cs.company_name))
+    loadCases()
+  }
+
+  async function handleSaveAllExtracted() {
+    for (const cs of extracted) {
+      await handleSaveExtracted(cs)
+    }
+    setExtracted([])
+    setShowExtract(false)
+    setExtractUrl('')
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">ケーススタディ管理</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          + 新規追加
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setShowExtract(!showExtract); setShowForm(false) }}
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+          >
+            AI自動抽出
+          </button>
+          <button
+            onClick={() => { setShowForm(!showForm); setShowExtract(false) }}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            + 手動追加
+          </button>
+        </div>
       </div>
 
+      {/* AI自動抽出パネル */}
+      {showExtract && (
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900">ケーススタディを自動抽出</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            WebページのURLまたはファイル（PDF・テキスト）からAIが自動でケーススタディ情報を抽出します
+          </p>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700">クライアント</label>
+            <select
+              value={formClientId}
+              onChange={(e) => setFormClientId(e.target.value)}
+              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 sm:w-64"
+            >
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* URL入力 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">URLから抽出</label>
+              <div className="mt-1 flex gap-2">
+                <input
+                  type="url"
+                  value={extractUrl}
+                  onChange={(e) => setExtractUrl(e.target.value)}
+                  placeholder="https://example.com/case-study"
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                />
+                <button
+                  onClick={handleExtractFromUrl}
+                  disabled={extracting || !extractUrl.trim()}
+                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  {extracting ? '抽出中...' : '抽出'}
+                </button>
+              </div>
+            </div>
+
+            {/* ファイルアップロード */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">ファイルから抽出</label>
+              <div className="mt-1">
+                <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  {extracting ? '抽出中...' : 'ファイルを選択（PDF・テキスト）'}
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.csv,.md"
+                    className="hidden"
+                    onChange={handleExtractFromFile}
+                    disabled={extracting}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {extractError && (
+            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+              {extractError}
+            </div>
+          )}
+
+          {/* 抽出結果 */}
+          {extracted.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  抽出結果: {extracted.length}件
+                </h3>
+                <button
+                  onClick={handleSaveAllExtracted}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  すべて登録する
+                </button>
+              </div>
+              <div className="mt-3 space-y-3">
+                {extracted.map((cs, i) => (
+                  <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">{cs.company_name}</p>
+                        <p className="text-sm text-gray-600">業種: {cs.industry}</p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {cs.challenge_tags.map((tag) => (
+                            <span key={tag} className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-sm text-gray-700">{cs.result_summary}</p>
+                      </div>
+                      <button
+                        onClick={() => handleSaveExtracted(cs)}
+                        className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                      >
+                        登録
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 手動追加フォーム */}
       {showForm && (
         <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">ケーススタディを追加</h2>
+          <h2 className="text-lg font-semibold text-gray-900">ケーススタディを手動追加</h2>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">クライアント</label>
@@ -192,6 +406,7 @@ export default function CasesPage() {
         </div>
       )}
 
+      {/* テーブル */}
       <div className="mt-6 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
