@@ -3,40 +3,35 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { INDUSTRIES, ROLE_LEVELS, EMPLOYEE_SCALES, REVENUE_SCALES } from '@/lib/constants'
+import { INDUSTRIES, EMPLOYEE_SCALES, REVENUE_SCALES } from '@/lib/constants'
 
-type ContactRow = {
+type CompanyRow = {
   id: string
-  full_name: string
-  department: string | null
-  title: string | null
-  role_level: string
-  company: {
-    name: string
-    employee_scale: string | null
-    revenue_scale: string | null
-    website: string | null
-    phone: string | null
-    founded_date: string | null
-    fiscal_month: string | null
-    representative_email: string | null
-  } | null
-  company_id: string | null
+  name: string
+  industry: string
+  employee_scale: string | null
+  revenue_scale: string | null
+  website: string | null
+  phone: string | null
+  founded_date: string | null
+  fiscal_month: string | null
+  representative_email: string | null
+  prefecture: string | null
+  lead_count: number
   letter_count: number
-  last_sent: string | null
   created_at: string
 }
 
-type SortKey = 'company_name' | 'full_name' | 'employee_scale' | 'revenue_scale' | 'letter_count' | 'last_sent' | 'created_at'
+type SortKey = 'name' | 'industry' | 'employee_scale' | 'revenue_scale' | 'lead_count' | 'letter_count' | 'created_at'
 type SortDir = 'asc' | 'desc'
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'company_name', label: '会社名' },
-  { value: 'full_name', label: '氏名' },
+  { value: 'name', label: '会社名' },
+  { value: 'industry', label: '業種' },
   { value: 'employee_scale', label: '社員数' },
   { value: 'revenue_scale', label: '売上' },
+  { value: 'lead_count', label: 'リード数' },
   { value: 'letter_count', label: '送付数' },
-  { value: 'last_sent', label: '最終送付' },
   { value: 'created_at', label: '登録日' },
 ]
 
@@ -46,33 +41,33 @@ EMPLOYEE_SCALES.forEach((s, i) => { EMPLOYEE_ORDER[s] = i })
 const REVENUE_ORDER: Record<string, number> = {}
 REVENUE_SCALES.forEach((s, i) => { REVENUE_ORDER[s] = i })
 
-function sortContacts(contacts: ContactRow[], key: SortKey, dir: SortDir): ContactRow[] {
-  const sorted = [...contacts].sort((a, b) => {
+function sortCompanies(companies: CompanyRow[], key: SortKey, dir: SortDir): CompanyRow[] {
+  const sorted = [...companies].sort((a, b) => {
     let cmp = 0
     switch (key) {
-      case 'company_name':
-        cmp = (a.company?.name ?? '').localeCompare(b.company?.name ?? '', 'ja')
+      case 'name':
+        cmp = a.name.localeCompare(b.name, 'ja')
         break
-      case 'full_name':
-        cmp = (a.full_name ?? '').localeCompare(b.full_name ?? '', 'ja')
+      case 'industry':
+        cmp = (a.industry ?? '').localeCompare(b.industry ?? '', 'ja')
         break
       case 'employee_scale': {
-        const aOrd = EMPLOYEE_ORDER[a.company?.employee_scale ?? ''] ?? 999
-        const bOrd = EMPLOYEE_ORDER[b.company?.employee_scale ?? ''] ?? 999
+        const aOrd = EMPLOYEE_ORDER[a.employee_scale ?? ''] ?? 999
+        const bOrd = EMPLOYEE_ORDER[b.employee_scale ?? ''] ?? 999
         cmp = aOrd - bOrd
         break
       }
       case 'revenue_scale': {
-        const aOrd = REVENUE_ORDER[a.company?.revenue_scale ?? ''] ?? 999
-        const bOrd = REVENUE_ORDER[b.company?.revenue_scale ?? ''] ?? 999
+        const aOrd = REVENUE_ORDER[a.revenue_scale ?? ''] ?? 999
+        const bOrd = REVENUE_ORDER[b.revenue_scale ?? ''] ?? 999
         cmp = aOrd - bOrd
         break
       }
+      case 'lead_count':
+        cmp = a.lead_count - b.lead_count
+        break
       case 'letter_count':
         cmp = a.letter_count - b.letter_count
-        break
-      case 'last_sent':
-        cmp = (a.last_sent ?? '').localeCompare(b.last_sent ?? '')
         break
       case 'created_at':
         cmp = a.created_at.localeCompare(b.created_at)
@@ -84,94 +79,104 @@ function sortContacts(contacts: ContactRow[], key: SortKey, dir: SortDir): Conta
 }
 
 export default function ContactsPage() {
-  const [contacts, setContacts] = useState<ContactRow[]>([])
+  const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [industryFilter, setIndustryFilter] = useState('')
-  const [roleFilter, setRoleFilter] = useState('')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
-  // Sort state
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
-  // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
-    loadContacts()
-  }, [industryFilter, roleFilter, search])
+    loadCompanies()
+  }, [industryFilter, search])
 
-  async function loadContacts() {
+  async function loadCompanies() {
     setLoading(true)
     setSelectedIds(new Set())
     const supabase = createClient()
 
     let query = supabase
-      .from('contacts')
+      .from('target_companies')
       .select(`
-        id, full_name, department, title, role_level, company_id, created_at,
-        target_companies!inner(name, industry, employee_scale, revenue_scale, website, phone, founded_date, fiscal_month, representative_email)
+        id, name, industry, employee_scale, revenue_scale, website, phone,
+        founded_date, fiscal_month, representative_email, prefecture, created_at
       `)
-      .eq('is_active', true)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(300)
 
-    if (roleFilter) {
-      query = query.eq('role_level', roleFilter)
+    if (industryFilter) {
+      query = query.eq('industry', industryFilter)
     }
     if (search) {
-      query = query.ilike('full_name', `%${search}%`)
+      query = query.ilike('name', `%${search}%`)
     }
 
-    const { data } = await query
+    const { data: companyData } = await query
 
-    // Fetch letter counts separately
-    const contactIds = data?.map(c => c.id) ?? []
-    const { data: letterCounts } = contactIds.length > 0
+    const companyIds = companyData?.map(c => c.id) ?? []
+
+    // Fetch lead counts per company
+    const { data: contactData } = companyIds.length > 0
+      ? await supabase
+          .from('contacts')
+          .select('id, company_id')
+          .eq('is_active', true)
+          .in('company_id', companyIds)
+      : { data: [] }
+
+    // Fetch letter counts per contact
+    const contactIds = contactData?.map(c => c.id) ?? []
+    const { data: letterData } = contactIds.length > 0
       ? await supabase
           .from('letters')
-          .select('contact_id, sent_at')
+          .select('contact_id')
           .in('contact_id', contactIds)
       : { data: [] }
 
-    const mapped: ContactRow[] = (data ?? []).map((c) => {
-      const company = Array.isArray(c.target_companies)
-        ? c.target_companies[0]
-        : c.target_companies
-      const letters = (letterCounts ?? []).filter(l => l.contact_id === c.id)
-      const sortedLetters = letters.sort((a, b) =>
-        (b.sent_at ?? '').localeCompare(a.sent_at ?? '')
-      )
-      return {
-        id: c.id,
-        full_name: c.full_name,
-        department: c.department,
-        title: c.title,
-        role_level: c.role_level,
-        company: company ? {
-          name: company.name,
-          employee_scale: company.employee_scale ?? null,
-          revenue_scale: company.revenue_scale ?? null,
-          website: company.website ?? null,
-          phone: company.phone ?? null,
-          founded_date: company.founded_date ?? null,
-          fiscal_month: company.fiscal_month ?? null,
-          representative_email: company.representative_email ?? null,
-        } : null,
-        company_id: c.company_id,
-        letter_count: letters.length,
-        last_sent: sortedLetters[0]?.sent_at ?? null,
-        created_at: c.created_at,
+    // Build counts
+    const leadCountMap: Record<string, number> = {}
+    const contactToCompany: Record<string, string> = {}
+    for (const c of contactData ?? []) {
+      if (c.company_id) {
+        leadCountMap[c.company_id] = (leadCountMap[c.company_id] ?? 0) + 1
+        contactToCompany[c.id] = c.company_id
       }
-    })
+    }
 
-    setContacts(mapped)
+    const letterCountMap: Record<string, number> = {}
+    for (const l of letterData ?? []) {
+      const compId = contactToCompany[l.contact_id]
+      if (compId) {
+        letterCountMap[compId] = (letterCountMap[compId] ?? 0) + 1
+      }
+    }
+
+    const mapped: CompanyRow[] = (companyData ?? []).map(c => ({
+      id: c.id,
+      name: c.name,
+      industry: c.industry,
+      employee_scale: c.employee_scale,
+      revenue_scale: c.revenue_scale,
+      website: c.website,
+      phone: c.phone,
+      founded_date: c.founded_date,
+      fiscal_month: c.fiscal_month,
+      representative_email: c.representative_email,
+      prefecture: c.prefecture,
+      lead_count: leadCountMap[c.id] ?? 0,
+      letter_count: letterCountMap[c.id] ?? 0,
+      created_at: c.created_at,
+    }))
+
+    setCompanies(mapped)
     setLoading(false)
   }
 
-  // Selection handlers
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -182,24 +187,29 @@ export default function ContactsPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === sortedContacts.length) {
+    if (selectedIds.size === sorted.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(sortedContacts.map(c => c.id)))
+      setSelectedIds(new Set(sorted.map(c => c.id)))
     }
   }
 
-  // Delete selected
   async function deleteSelected() {
     if (selectedIds.size === 0) return
     setDeleting(true)
     const supabase = createClient()
-
     const ids = Array.from(selectedIds)
-    // Soft delete: set is_active = false
-    const { error } = await supabase
+
+    // Soft delete contacts under these companies
+    await supabase
       .from('contacts')
       .update({ is_active: false, updated_at: new Date().toISOString() })
+      .in('company_id', ids)
+
+    // Delete companies
+    const { error } = await supabase
+      .from('target_companies')
+      .delete()
       .in('id', ids)
 
     if (error) {
@@ -209,10 +219,9 @@ export default function ContactsPage() {
     setDeleting(false)
     setShowDeleteConfirm(false)
     setSelectedIds(new Set())
-    loadContacts()
+    loadCompanies()
   }
 
-  // Sort handler
   function handleSortChange(key: SortKey) {
     if (key === sortKey) {
       setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -222,12 +231,12 @@ export default function ContactsPage() {
     }
   }
 
-  const sortedContacts = sortContacts(contacts, sortKey, sortDir)
+  const sorted = sortCompanies(companies, sortKey, sortDir)
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">コンタクト管理</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">取引先管理</h1>
         <Link
           href="/contacts/import"
           className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
@@ -248,19 +257,9 @@ export default function ContactsPage() {
             <option key={i} value={i}>{i}</option>
           ))}
         </select>
-        <select
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
-        >
-          <option value="">役職</option>
-          {ROLE_LEVELS.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
-        </select>
         <input
           type="text"
-          placeholder="氏名で検索"
+          placeholder="会社名で検索"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
@@ -291,14 +290,14 @@ export default function ContactsPage() {
       {selectedIds.size > 0 && (
         <div className="mt-3 flex items-center gap-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2">
           <span className="text-sm font-medium text-neutral-700">
-            {selectedIds.size}件を選択中
+            {selectedIds.size}社を選択中
           </span>
           <button
             onClick={() => setShowDeleteConfirm(true)}
             disabled={deleting}
             className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
           >
-            選択したコンタクトを削除
+            選択した取引先を削除
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
@@ -313,9 +312,9 @@ export default function ContactsPage() {
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-neutral-900">コンタクトを削除しますか？</h3>
+            <h3 className="text-lg font-semibold text-neutral-900">取引先を削除しますか？</h3>
             <p className="mt-2 text-sm text-neutral-600">
-              {selectedIds.size}件のコンタクトを非アクティブにします。この操作は管理者が復元できます。
+              {selectedIds.size}社の取引先と配下のリードを削除します。
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -344,14 +343,16 @@ export default function ContactsPage() {
               <th className="px-3 py-3">
                 <input
                   type="checkbox"
-                  checked={sortedContacts.length > 0 && selectedIds.size === sortedContacts.length}
+                  checked={sorted.length > 0 && selectedIds.size === sorted.length}
                   onChange={toggleSelectAll}
                   className="h-4 w-4 rounded border-neutral-300"
                 />
               </th>
               {[
-                { key: 'company_name' as SortKey, label: '会社名' },
-                { key: 'full_name' as SortKey, label: '氏名' },
+                { key: 'name' as SortKey, label: '会社名' },
+                { key: 'industry' as SortKey, label: '業種' },
+                { key: 'employee_scale' as SortKey, label: '社員数' },
+                { key: 'revenue_scale' as SortKey, label: '売上' },
               ].map(col => (
                 <th
                   key={col.key}
@@ -361,24 +362,14 @@ export default function ContactsPage() {
                   {col.label} {sortKey === col.key && (sortDir === 'asc' ? '↑' : '↓')}
                 </th>
               ))}
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">役職</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">所在地</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">HP</th>
               <th
-                onClick={() => handleSortChange('employee_scale')}
+                onClick={() => handleSortChange('lead_count')}
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
               >
-                社員数 {sortKey === 'employee_scale' && (sortDir === 'asc' ? '↑' : '↓')}
+                リード数 {sortKey === 'lead_count' && (sortDir === 'asc' ? '↑' : '↓')}
               </th>
-              <th
-                onClick={() => handleSortChange('revenue_scale')}
-                className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
-              >
-                売上 {sortKey === 'revenue_scale' && (sortDir === 'asc' ? '↑' : '↓')}
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">会社HP</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">代表電話</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">設立</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">決算月</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">代表メール</th>
               <th
                 onClick={() => handleSortChange('letter_count')}
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
@@ -386,65 +377,68 @@ export default function ContactsPage() {
                 送付数 {sortKey === 'letter_count' && (sortDir === 'asc' ? '↑' : '↓')}
               </th>
               <th
-                onClick={() => handleSortChange('last_sent')}
+                onClick={() => handleSortChange('created_at')}
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
               >
-                最終送付 {sortKey === 'last_sent' && (sortDir === 'asc' ? '↑' : '↓')}
+                登録日 {sortKey === 'created_at' && (sortDir === 'asc' ? '↑' : '↓')}
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={13} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
                   読み込み中...
                 </td>
               </tr>
-            ) : sortedContacts.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <tr>
-                <td colSpan={13} className="px-4 py-8 text-center text-sm text-neutral-500">
-                  コンタクトがありません
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
+                  取引先がありません
                 </td>
               </tr>
             ) : (
-              sortedContacts.map((contact) => (
+              sorted.map((company) => (
                 <tr
-                  key={contact.id}
-                  className={`hover:bg-neutral-50 ${selectedIds.has(contact.id) ? 'bg-neutral-50' : ''}`}
+                  key={company.id}
+                  className={`hover:bg-neutral-50 ${selectedIds.has(company.id) ? 'bg-neutral-50' : ''}`}
                 >
                   <td className="px-3 py-3">
                     <input
                       type="checkbox"
-                      checked={selectedIds.has(contact.id)}
-                      onChange={() => toggleSelect(contact.id)}
+                      checked={selectedIds.has(company.id)}
+                      onChange={() => toggleSelect(company.id)}
                       className="h-4 w-4 rounded border-neutral-300"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm text-neutral-900">{contact.company?.name ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-neutral-900">{contact.full_name || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.title ?? contact.role_level}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.employee_scale ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.revenue_scale ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-neutral-900">
+                    <Link href={`/contacts/${company.id}`} className="text-blue-700 hover:underline">
+                      {company.name}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{company.industry || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{company.employee_scale ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{company.revenue_scale ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{company.prefecture ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">
-                    {contact.company?.website ? (
-                      <a href={contact.company.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-[120px]" title={contact.company.website}>
-                        {contact.company.website.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                    {company.website ? (
+                      <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-[120px]" title={company.website}>
+                        {company.website.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
                       </a>
                     ) : '-'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.phone ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.founded_date ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.fiscal_month ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.representative_email ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.letter_count}通</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.last_sent ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{company.lead_count}名</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{company.letter_count}通</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">
+                    {company.created_at ? new Date(company.created_at).toLocaleDateString('ja-JP') : '-'}
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-neutral-400">{sortedContacts.length}件表示</p>
+      <p className="mt-2 text-xs text-neutral-400">{sorted.length}社表示</p>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WHY_YOU_ANGLES } from '@/lib/constants'
 import { useNotification } from '@/lib/useNotification'
@@ -29,6 +30,7 @@ type CaseStudy = {
 }
 
 export default function NewLetterPage() {
+  const router = useRouter()
   const { requestPermission, notify } = useNotification()
 
   useEffect(() => {
@@ -208,7 +210,7 @@ export default function NewLetterPage() {
   async function saveLetter() {
     if (!selectedContact || !generatedLetter) return
     const supabase = createClient()
-    await supabase.from('letters').insert({
+    const { data: savedLetter } = await supabase.from('letters').insert({
       client_id: selectedClient,
       contact_id: selectedContact.id,
       case_study_id: selectedCaseStudy,
@@ -216,10 +218,16 @@ export default function NewLetterPage() {
       collected_context: collectedContext,
       body_text: generatedLetter,
       sources: generatedSources,
-    })
+    }).select('id').single()
     setSaved(true)
     // 保存後に自動でdocxダウンロード
-    downloadDocx()
+    await downloadDocx()
+    // 手紙一覧のレビューページへ遷移
+    if (savedLetter?.id) {
+      router.push(`/letters/${savedLetter.id}/review`)
+    } else {
+      router.push('/letters')
+    }
   }
 
   async function downloadDocx() {
