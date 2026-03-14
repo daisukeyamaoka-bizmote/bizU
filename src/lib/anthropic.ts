@@ -1,5 +1,3 @@
-import { ProxyAgent, fetch as undiFetch } from 'undici'
-
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 
 interface AnthropicMessage {
@@ -11,12 +9,19 @@ interface AnthropicResponse {
   content: Array<{ type: string; text?: string }>
 }
 
-function getDispatcher() {
+async function fetchWithProxy(url: string, init: RequestInit): Promise<Response> {
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
   if (proxy) {
-    return new ProxyAgent(proxy)
+    // Use undici with proxy only in Node.js environments (local dev)
+    try {
+      const { ProxyAgent, fetch: undiFetch } = await import('undici')
+      const dispatcher = new ProxyAgent(proxy)
+      return undiFetch(url, { ...init, dispatcher }) as unknown as Response
+    } catch {
+      // undici not available, fall through to native fetch
+    }
   }
-  return undefined
+  return fetch(url, init)
 }
 
 export async function callClaude(options: {
@@ -39,9 +44,7 @@ export async function callClaude(options: {
     body.system = options.system
   }
 
-  const dispatcher = getDispatcher()
-
-  const res = await undiFetch(ANTHROPIC_API_URL, {
+  const res = await fetchWithProxy(ANTHROPIC_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -49,7 +52,6 @@ export async function callClaude(options: {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-    ...(dispatcher ? { dispatcher } : {}),
   })
 
   if (!res.ok) {
