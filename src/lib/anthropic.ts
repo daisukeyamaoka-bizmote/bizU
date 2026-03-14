@@ -1,6 +1,4 @@
 import { ProxyAgent, fetch as undiFetch } from 'undici'
-import { readFileSync } from 'fs'
-import { join } from 'path'
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 
@@ -11,28 +9,6 @@ interface AnthropicMessage {
 
 interface AnthropicResponse {
   content: Array<{ type: string; text?: string }>
-}
-
-// Read API key from .env.local directly as fallback
-function getApiKey(): string {
-  // Try process.env first
-  if (process.env.ANTHROPIC_API_KEY) {
-    return process.env.ANTHROPIC_API_KEY
-  }
-
-  // Fallback: read .env.local directly
-  try {
-    const envPath = join(process.cwd(), '.env.local')
-    const content = readFileSync(envPath, 'utf-8')
-    const match = content.match(/^ANTHROPIC_API_KEY=(.+)$/m)
-    if (match) {
-      return match[1].trim()
-    }
-  } catch {
-    // ignore
-  }
-
-  throw new Error('ANTHROPIC_API_KEY が設定されていません。.env.local を確認してください。')
 }
 
 function getDispatcher() {
@@ -49,7 +25,10 @@ export async function callClaude(options: {
   model?: string
   max_tokens?: number
 }): Promise<AnthropicResponse> {
-  const apiKey = getApiKey()
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY が設定されていません。デプロイ環境の環境変数を確認してください。')
+  }
 
   const body: Record<string, unknown> = {
     model: options.model ?? 'claude-sonnet-4-20250514',
