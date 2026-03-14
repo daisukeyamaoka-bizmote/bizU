@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { callClaude, getTextFromResponse } from '@/lib/anthropic'
+import * as XLSX from 'xlsx'
+import mammoth from 'mammoth'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業に活用できるナレッジ情報を抽出してください。
@@ -39,8 +41,7 @@ case_studyカテゴリの場合は、case_studyフィールドに以下の形式
 テキスト全体から、営業活動に使える情報をすべて抽出してください。1つのソースから複数のナレッジを抽出してOKです。`
 
 // エクセルファイルからテキストを抽出
-async function extractTextFromExcel(buffer: ArrayBuffer): Promise<string> {
-  const XLSX = await import('xlsx')
+function extractTextFromExcel(buffer: ArrayBuffer): string {
   const workbook = XLSX.read(buffer, { type: 'array' })
   const lines: string[] = []
 
@@ -57,7 +58,6 @@ async function extractTextFromExcel(buffer: ArrayBuffer): Promise<string> {
 
 // Word(.docx)ファイルからテキストを抽出
 async function extractTextFromDocx(buffer: ArrayBuffer): Promise<string> {
-  const mammoth = (await import('mammoth')).default
   const result = await mammoth.extractRawText({ arrayBuffer: buffer })
   return result.value
 }
@@ -131,12 +131,7 @@ export async function POST(request: Request) {
 
       // PDF → Claude API で直接読み取り
       if (file.type === 'application/pdf' || ext === 'pdf') {
-        const bytes = new Uint8Array(arrayBuffer)
-        let binary = ''
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i])
-        }
-        const base64 = btoa(binary)
+        const base64 = Buffer.from(arrayBuffer).toString('base64')
 
         const response = await callClaude({
           messages: [
@@ -166,7 +161,7 @@ export async function POST(request: Request) {
       if (ext === 'xlsx' || ext === 'xls' ||
           file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
           file.type === 'application/vnd.ms-excel') {
-        textContent = await extractTextFromExcel(arrayBuffer)
+        textContent = extractTextFromExcel(arrayBuffer)
         textContent = textContent.slice(0, 15000)
         sourceType = 'file'
       }

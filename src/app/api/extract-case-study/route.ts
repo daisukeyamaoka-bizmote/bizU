@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業で使えるケーススタディ情報を抽出してください。
@@ -68,12 +68,7 @@ export async function POST(request: Request) {
 
       if (file.type === 'application/pdf') {
         const arrayBuffer = await file.arrayBuffer()
-        const bytes = new Uint8Array(arrayBuffer)
-        let binary = ''
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i])
-        }
-        const base64 = btoa(binary)
+        const base64 = Buffer.from(arrayBuffer).toString('base64')
 
         const response = await callClaude({
           messages: [
