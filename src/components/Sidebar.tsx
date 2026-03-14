@@ -10,7 +10,6 @@ import {
   BookOpen,
   Users,
   EnvelopeSimple,
-  PencilSimple,
   ChartBar,
   TrendUp,
   SignOut,
@@ -18,11 +17,10 @@ import {
 
 const navItems = [
   { href: '/', label: 'ダッシュボード', icon: SquaresFour },
-  { href: '/projects', label: 'プロジェクト', icon: FolderSimple },
-  { href: '/knowledge', label: 'ナレッジ管理', icon: BookOpen },
-  { href: '/contacts', label: 'コンタクト管理', icon: Users },
+  { href: '/contacts', label: '1. リスト管理', icon: Users },
+  { href: '/knowledge', label: '2. ナレッジ', icon: BookOpen },
+  { href: '/projects', label: '3. 手紙作成', icon: FolderSimple },
   { href: '/letters', label: '手紙一覧', icon: EnvelopeSimple },
-  { href: '/letters/new', label: '手紙を生成', icon: PencilSimple },
   { href: '/cases', label: 'ケーススタディ', icon: ChartBar },
   { href: '/reactions', label: '反応記録', icon: TrendUp },
 ]

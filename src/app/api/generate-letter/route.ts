@@ -28,18 +28,51 @@ const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルで�
 - プロダクト情報 → ソリューションの具体的な説明に活用
 - 導入事例 → 最も宛先企業に近い業種・課題の事例を選んで使用
 - 営業資料 → 説得力のあるフレーズや数値を活用
-- 市場動向 → 課題仮説の裏付けに活用`
+- 市場動向 → 課題仮説の裏付けに活用
+
+【ディープリサーチ情報がある場合】
+- 企業の中期経営計画や注力領域に即した課題仮説を立てる
+- 人物リサーチから得た発言・記事内容をWhy Youのフックに使う
+- プロダクト適合性分析の推奨アプローチ角度に沿って訴求する
+- Why You分析の推奨書き出しを参考にパーソナライズする`
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { contact, client, caseStudy, whyYouAngle, sendTrigger, collectedContext, knowledgeContext } = body
+    const {
+      contact,
+      client,
+      caseStudy,
+      whyYouAngle,
+      sendTrigger,
+      collectedContext,
+      knowledgeContext,
+      // Deep research results (optional)
+      deepResearch,
+    } = body
 
     let knowledgeSection = ''
     if (knowledgeContext && knowledgeContext.length > 0) {
       knowledgeSection = `\n\n【ナレッジベース（以下の情報を活用して手紙を作成）】\n`
       for (const k of knowledgeContext) {
         knowledgeSection += `\n--- ${k.category}: ${k.title} ---\n${k.content}\n`
+      }
+    }
+
+    let deepResearchSection = ''
+    if (deepResearch) {
+      deepResearchSection = '\n\n【ディープリサーチ結果（以下の調査結果を最大限活用して手紙をパーソナライズ）】'
+      if (deepResearch.companyResearch) {
+        deepResearchSection += `\n\n--- 企業IR・中期経営計画 ---\n${deepResearch.companyResearch}`
+      }
+      if (deepResearch.personResearch) {
+        deepResearchSection += `\n\n--- 人物リサーチ ---\n${deepResearch.personResearch}`
+      }
+      if (deepResearch.productFitAnalysis) {
+        deepResearchSection += `\n\n--- プロダクト適合性分析 ---\n${deepResearch.productFitAnalysis}`
+      }
+      if (deepResearch.whyYouAnalysis) {
+        deepResearchSection += `\n\n--- Why You分析 ---\n${deepResearch.whyYouAnalysis}`
       }
     }
 
@@ -66,7 +99,7 @@ ${sendTrigger || '特になし'}
 【提供するソリューション】
 クライアント: ${client?.name ?? ''}
 商材: ${client?.product_name ?? ''}
-${knowledgeSection}
+${knowledgeSection}${deepResearchSection}
 【差出人情報】
 bizmote株式会社
 代表取締役 山岡大輔`

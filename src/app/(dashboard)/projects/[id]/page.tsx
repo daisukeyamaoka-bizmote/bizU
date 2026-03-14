@@ -24,11 +24,18 @@ type ProjectContact = {
   contact_id: string
   full_name: string
   company_name: string
+  department: string | null
   title: string | null
   role_level: string
   status: string
   letter_id: string | null
   sent_at: string | null
+}
+
+type ResearchProgress = {
+  contactId: string
+  step: 'company' | 'person' | 'fit' | 'whyyou' | 'letter' | 'done'
+  stepLabel: string
 }
 
 export default function ProjectDetailPage() {
@@ -38,12 +45,17 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [contacts, setContacts] = useState<ProjectContact[]>([])
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [generatingId, setGeneratingId] = useState<string | null>(null)
-  const [bulkGenerating, setBulkGenerating] = useState(false)
-  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 })
 
-  // CSV Upload
+  // 優先選択（最大5社）
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // 生成パイプライン
+  const [pipelineRunning, setPipelineRunning] = useState(false)
+  const [pipelineProgress, setPipelineProgress] = useState<ResearchProgress[]>([])
+  const [pipelineCurrentIdx, setPipelineCurrentIdx] = useState(0)
+  const [pipelineTotal, setPipelineTotal] = useState(0)
+
+  // 対象者追加
   const [showUpload, setShowUpload] = useState(false)
   const [availableContacts, setAvailableContacts] = useState<{ id: string; full_name: string; company_name: string; title: string | null }[]>([])
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
@@ -77,7 +89,7 @@ export default function ProjectDetailPage() {
 
     const { data: contactsData } = await supabase
       .from('contacts')
-      .select('id, full_name, title, role_level, company_id')
+      .select('id, full_name, department, title, role_level, company_id')
       .in('id', contactIds)
 
     const companyIds = [...new Set((contactsData ?? []).map(c => c.company_id).filter(Boolean))]
@@ -94,6 +106,7 @@ export default function ProjectDetailPage() {
         contact_id: pc.contact_id,
         full_name: contact?.full_name ?? '-',
         company_name: companyMap.get(contact?.company_id ?? '') ?? '-',
+        department: contact?.department ?? null,
         title: contact?.title ?? null,
         role_level: contact?.role_level ?? '-',
         status: pc.status,
@@ -110,7 +123,18 @@ export default function ProjectDetailPage() {
     loadContacts()
   }, [loadProject, loadContacts])
 
-  // コンタクトを検索して追加
+  // 優先チェック切替
+  function toggleSelection(contactId: string) {
+    const next = new Set(selectedIds)
+    if (next.has(contactId)) {
+      next.delete(contactId)
+    } else if (next.size < 5) {
+      next.add(contactId)
+    }
+    setSelectedIds(next)
+  }
+
+  // 対象者検索
   async function searchContacts() {
     const supabase = createClient()
     let query = supabase
@@ -154,8 +178,6 @@ export default function ProjectDetailPage() {
     }))
 
     await supabase.from('project_contacts').insert(inserts)
-
-    // Update target count
     await supabase
       .from('projects')
       .update({ target_count: contacts.length + inserts.length })
@@ -168,7 +190,6 @@ export default function ProjectDetailPage() {
     loadProject()
   }
 
-  // 全コンタクトを一括追加
   async function addAllContacts() {
     setAddingContacts(true)
     const supabase = createClient()
@@ -192,43 +213,20 @@ export default function ProjectDetailPage() {
     loadProject()
   }
 
-  // 1件の手紙を生成
-  async function generateLetterForContact(pc: ProjectContact) {
-    if (!project) return
-    setGeneratingId(pc.contact_id)
+  // ===== メインパイプライン: 選択した5社のディープリサーチ＋手紙生成 =====
+  async function runPipeline() {
+    if (!project || selectedIds.size === 0) return
+
+    const targets = contacts.filter(c => selectedIds.has(c.contact_id) && c.status === 'pending')
+    if (targets.length === 0) return
+
+    setPipelineRunning(true)
+    setPipelineTotal(targets.length)
+    setPipelineProgress([])
 
     const supabase = createClient()
 
-    // Get contact and company details
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('*, target_companies(name)')
-      .eq('id', pc.contact_id)
-      .single()
-
-    if (!contact) { setGeneratingId(null); return }
-
-    const company = Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies
-
-    // Get client
-    const { data: client } = await supabase
-      .from('clients')
-      .select('id, name, product_name')
-      .eq('id', project.client_id)
-      .single()
-
-    // Get case study
-    let caseStudy = null
-    if (project.case_study_id) {
-      const { data } = await supabase
-        .from('case_studies')
-        .select('company_name, challenge_tags, result_summary')
-        .eq('id', project.case_study_id)
-        .single()
-      caseStudy = data
-    }
-
-    // Get knowledge context for this client
+    // ナレッジ取得（全社共通）
     const { data: knowledgeIds } = await supabase
       .from('project_knowledge')
       .select('knowledge_id')
@@ -242,7 +240,6 @@ export default function ProjectDetailPage() {
         .in('id', knowledgeIds.map(k => k.knowledge_id))
       knowledgeContext = knowledge ?? []
     } else {
-      // Fallback: use all knowledge for this client
       const { data: knowledge } = await supabase
         .from('knowledge_items')
         .select('category, title, content')
@@ -251,87 +248,141 @@ export default function ProjectDetailPage() {
       knowledgeContext = knowledge ?? []
     }
 
-    // Web検索で企業の最新情報を取得
-    let collectedContext = ''
-    if (company?.name) {
+    // クライアント・ケーススタディ取得
+    const { data: client } = await supabase
+      .from('clients')
+      .select('id, name, product_name')
+      .eq('id', project.client_id)
+      .single()
+
+    let caseStudy = null
+    if (project.case_study_id) {
+      const { data } = await supabase
+        .from('case_studies')
+        .select('company_name, challenge_tags, result_summary')
+        .eq('id', project.case_study_id)
+        .single()
+      caseStudy = data
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+      const pc = targets[i]
+      setPipelineCurrentIdx(i + 1)
+
+      // Step 1: 企業リサーチ
+      updateProgress(pc.contact_id, 'company', '企業IR・中計を調査中...')
+
+      let deepResearch = null
       try {
-        const infoRes = await fetch('/api/collect-info', {
+        // Step 2: 人物リサーチ（進捗表示を更新）
+        const researchPromise = fetch('/api/deep-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyName: company.name }),
+          body: JSON.stringify({
+            companyName: pc.company_name,
+            contactName: pc.full_name,
+            contactTitle: pc.title,
+            contactDepartment: pc.department,
+            knowledgeContext,
+          }),
         })
-        const infoData = await infoRes.json()
-        collectedContext = infoData.context ?? ''
+
+        // 進捗をシミュレーション表示（実際のAPIは内部で4ステップ実行）
+        await delay(2000)
+        updateProgress(pc.contact_id, 'person', '担当者の人事異動・記事を調査中...')
+        await delay(2000)
+        updateProgress(pc.contact_id, 'fit', 'プロダクト適合性を分析中...')
+        await delay(2000)
+        updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
+
+        const researchRes = await researchPromise
+        const researchData = await researchRes.json()
+        if (!researchData.error) {
+          deepResearch = researchData
+        }
       } catch {
-        // Web検索に失敗しても手紙生成は続行
+        // リサーチ失敗時も手紙生成は続行
       }
+
+      // Step 5: 手紙生成
+      updateProgress(pc.contact_id, 'letter', '手紙を生成中...')
+
+      const { data: contact } = await supabase
+        .from('contacts')
+        .select('*, target_companies(name)')
+        .eq('id', pc.contact_id)
+        .single()
+
+      if (!contact) continue
+
+      const company = Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies
+
+      try {
+        const res = await fetch('/api/generate-letter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contact: {
+              full_name: contact.full_name,
+              department: contact.department,
+              title: contact.title,
+              company_name: company?.name ?? '',
+              address: contact.address,
+            },
+            client,
+            caseStudy,
+            whyYouAngle: project.why_you_angle ?? '採用強化',
+            sendTrigger: project.send_trigger ?? '',
+            collectedContext: deepResearch?.companyResearch ?? '',
+            knowledgeContext,
+            deepResearch,
+          }),
+        })
+        const data = await res.json()
+
+        if (data.letter) {
+          const { data: letter } = await supabase.from('letters').insert({
+            client_id: project.client_id,
+            contact_id: pc.contact_id,
+            case_study_id: project.case_study_id,
+            project_id: projectId,
+            why_you_angle: project.why_you_angle ?? '採用強化',
+            send_trigger: project.send_trigger ?? null,
+            body_text: data.letter,
+            collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
+          }).select('id').single()
+
+          if (letter) {
+            await supabase
+              .from('project_contacts')
+              .update({ status: 'generated', letter_id: letter.id })
+              .eq('id', pc.id)
+          }
+        }
+      } catch {
+        // 個別エラー時は次へ進む
+      }
+
+      updateProgress(pc.contact_id, 'done', '完了')
     }
 
-    // Generate letter
-    const res = await fetch('/api/generate-letter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contact: {
-          full_name: contact.full_name,
-          department: contact.department,
-          title: contact.title,
-          company_name: company?.name ?? '',
-          address: contact.address,
-        },
-        client,
-        caseStudy,
-        whyYouAngle: project.why_you_angle ?? '採用強化',
-        sendTrigger: project.send_trigger ?? '',
-        collectedContext,
-        knowledgeContext,
-      }),
-    })
-    const data = await res.json()
-
-    if (data.letter) {
-      // Save letter
-      const { data: letter } = await supabase.from('letters').insert({
-        client_id: project.client_id,
-        contact_id: pc.contact_id,
-        case_study_id: project.case_study_id,
-        project_id: projectId,
-        why_you_angle: project.why_you_angle ?? '採用強化',
-        send_trigger: project.send_trigger ?? null,
-        body_text: data.letter,
-      }).select('id').single()
-
-      // Update project_contact
-      if (letter) {
-        await supabase
-          .from('project_contacts')
-          .update({ status: 'generated', letter_id: letter.id })
-          .eq('id', pc.id)
-      }
-    }
-
-    setGeneratingId(null)
+    setPipelineRunning(false)
+    setSelectedIds(new Set())
     loadContacts()
-  }
-
-  // 一括生成
-  async function bulkGenerate() {
-    const pending = contacts.filter(c => c.status === 'pending')
-    if (pending.length === 0) return
-
-    setBulkGenerating(true)
-    setBulkProgress({ current: 0, total: pending.length })
-
-    for (let i = 0; i < pending.length; i++) {
-      setBulkProgress({ current: i + 1, total: pending.length })
-      await generateLetterForContact(pending[i])
-    }
-
-    setBulkGenerating(false)
     loadProject()
   }
 
-  // ステータスを「送付済み」に更新
+  function updateProgress(contactId: string, step: ResearchProgress['step'], stepLabel: string) {
+    setPipelineProgress(prev => {
+      const existing = prev.find(p => p.contactId === contactId)
+      if (existing) {
+        return prev.map(p => p.contactId === contactId ? { ...p, step, stepLabel } : p)
+      }
+      return [...prev, { contactId, step, stepLabel }]
+    })
+  }
+
+  // 送付済みに更新
   async function markAsSent(pc: ProjectContact) {
     const supabase = createClient()
     const today = new Date().toISOString().split('T')[0]
@@ -348,7 +399,6 @@ export default function ProjectDetailPage() {
         .eq('id', pc.letter_id)
     }
 
-    // Update sent count
     const newSentCount = contacts.filter(c => c.status === 'sent').length + 1
     await supabase
       .from('projects')
@@ -361,9 +411,9 @@ export default function ProjectDetailPage() {
 
   const statusLabel: Record<string, { text: string; color: string }> = {
     pending: { text: '未生成', color: 'bg-neutral-100 text-neutral-600' },
-    generated: { text: '生成済', color: 'bg-neutral-100 text-neutral-700' },
-    sent: { text: '送付済', color: 'bg-neutral-100 text-neutral-700' },
-    reacted: { text: '反応あり', color: 'bg-neutral-100 text-neutral-700' },
+    generated: { text: '生成済', color: 'bg-emerald-50 text-emerald-700' },
+    sent: { text: '送付済', color: 'bg-blue-50 text-blue-700' },
+    reacted: { text: '反応あり', color: 'bg-amber-50 text-amber-700' },
     skipped: { text: 'スキップ', color: 'bg-neutral-100 text-neutral-400' },
   }
 
@@ -372,11 +422,12 @@ export default function ProjectDetailPage() {
   const pendingCount = contacts.filter(c => c.status === 'pending').length
   const generatedCount = contacts.filter(c => c.status === 'generated').length
   const sentCount = contacts.filter(c => c.status === 'sent').length
+  const selectedPendingCount = contacts.filter(c => selectedIds.has(c.contact_id) && c.status === 'pending').length
 
   return (
     <div>
       <div className="flex items-center gap-4">
-        <Link href="/projects" className="text-sm text-neutral-900 hover:underline">← プロジェクト一覧</Link>
+        <Link href="/projects" className="text-sm text-neutral-900 hover:underline">&larr; プロジェクト一覧</Link>
       </div>
 
       {/* プロジェクトヘッダー */}
@@ -414,26 +465,78 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* アクションバー */}
-      <div className="mt-4 flex flex-wrap gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           onClick={() => { setShowUpload(true); searchContacts() }}
           className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
         >
           + 対象者を追加
         </button>
-        {pendingCount > 0 && (
+
+        {selectedPendingCount > 0 && !pipelineRunning && (
           <button
-            onClick={bulkGenerate}
-            disabled={bulkGenerating}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            onClick={runPipeline}
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
           >
-            {bulkGenerating
-              ? `一括生成中... (${bulkProgress.current}/${bulkProgress.total})`
-              : `未生成 ${pendingCount}件を一括生成`
-            }
+            選択した{selectedPendingCount}社のリサーチ＋手紙生成を開始
           </button>
         )}
+
+        {selectedIds.size > 0 && !pipelineRunning && (
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-200"
+          >
+            選択を解除
+          </button>
+        )}
+
+        {pendingCount > 0 && !pipelineRunning && (
+          <p className="text-sm text-neutral-500">
+            未生成の対象者にチェックを入れて手紙を作成（最大5社）
+          </p>
+        )}
       </div>
+
+      {/* パイプライン進捗 */}
+      {pipelineRunning && (
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">
+            リサーチ＋手紙生成中（{pipelineCurrentIdx}/{pipelineTotal}）
+          </h2>
+          <div className="mt-4 space-y-3">
+            {pipelineProgress.map((p) => {
+              const pc = contacts.find(c => c.contact_id === p.contactId)
+              const stepIcons: Record<string, string> = {
+                company: '1/5',
+                person: '2/5',
+                fit: '3/5',
+                whyyou: '4/5',
+                letter: '5/5',
+                done: '---',
+              }
+              return (
+                <div key={p.contactId} className="flex items-center gap-4 rounded-lg bg-neutral-50 px-4 py-3">
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                    p.step === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-200 text-neutral-700'
+                  }`}>
+                    {stepIcons[p.step]}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-neutral-900">
+                      {pc?.company_name} - {pc?.full_name}
+                    </p>
+                    <p className="text-xs text-neutral-500">{p.stepLabel}</p>
+                  </div>
+                  {p.step === 'done' && (
+                    <span className="text-xs font-medium text-emerald-600">完了</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 対象者追加パネル */}
       {showUpload && (
@@ -524,6 +627,9 @@ export default function ProjectDetailPage() {
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50">
             <tr>
+              <th className="w-10 px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">
+                <span className="sr-only">選択</span>
+              </th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">会社名</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">氏名</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">役職</th>
@@ -535,39 +641,50 @@ export default function ProjectDetailPage() {
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">読み込み中...</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-500">読み込み中...</td>
               </tr>
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-500">
                   対象者がいません。「+ 対象者を追加」から追加してください。
                 </td>
               </tr>
             ) : (
               contacts.map((pc) => {
                 const s = statusLabel[pc.status] ?? statusLabel.pending
+                const isSelected = selectedIds.has(pc.contact_id)
+                const progressItem = pipelineProgress.find(p => p.contactId === pc.contact_id)
                 return (
-                  <tr key={pc.id} className="hover:bg-neutral-50">
+                  <tr key={pc.id} className={`hover:bg-neutral-50 ${isSelected ? 'bg-neutral-50' : ''}`}>
+                    <td className="px-4 py-3">
+                      {pc.status === 'pending' && !pipelineRunning && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelection(pc.contact_id)}
+                          disabled={!isSelected && selectedIds.size >= 5}
+                          className="h-4 w-4 rounded border-neutral-300 disabled:opacity-30"
+                        />
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-neutral-900">{pc.company_name}</td>
                     <td className="px-4 py-3 text-sm font-medium text-neutral-900">{pc.full_name}</td>
                     <td className="px-4 py-3 text-sm text-neutral-600">{pc.title ?? pc.role_level}</td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
-                        {s.text}
-                      </span>
+                      {progressItem && progressItem.step !== 'done' ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
+                          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-neutral-400" />
+                          {progressItem.stepLabel}
+                        </span>
+                      ) : (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
+                          {s.text}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-600">{pc.sent_at ?? '-'}</td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex gap-2">
-                        {pc.status === 'pending' && (
-                          <button
-                            onClick={() => generateLetterForContact(pc)}
-                            disabled={generatingId === pc.contact_id}
-                            className="text-neutral-900 hover:underline disabled:opacity-50"
-                          >
-                            {generatingId === pc.contact_id ? '生成中...' : '生成'}
-                          </button>
-                        )}
                         {pc.status === 'generated' && pc.letter_id && (
                           <>
                             <Link href={`/letters/${pc.letter_id}`} className="text-neutral-900 hover:underline">
@@ -597,4 +714,8 @@ export default function ProjectDetailPage() {
       </div>
     </div>
   )
+}
+
+function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
