@@ -2,10 +2,7 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
 export const runtime = 'nodejs'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+export const dynamic = 'force-dynamic'
 
 const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルです。
 日本の大手企業の役員に送る、高反応率のパーソナライズ手紙を作成します。
@@ -35,6 +32,9 @@ const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルで�
 
 export async function POST(request: Request) {
   try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    })
     const body = await request.json()
     const { contact, client, caseStudy, whyYouAngle, sendTrigger, collectedContext, knowledgeContext } = body
 

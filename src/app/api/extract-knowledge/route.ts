@@ -4,10 +4,7 @@ import * as XLSX from 'xlsx'
 import mammoth from 'mammoth'
 
 export const runtime = 'nodejs'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+export const dynamic = 'force-dynamic'
 
 const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業に活用できるナレッジ情報を抽出してください。
 
@@ -97,6 +94,9 @@ async function extractTextFromPptx(buffer: ArrayBuffer): Promise<string> {
 
 export async function POST(request: Request) {
   try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    })
     const contentType = request.headers.get('content-type') ?? ''
 
     let textContent = ''

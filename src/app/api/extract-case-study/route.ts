@@ -2,10 +2,7 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
 export const runtime = 'nodejs'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+export const dynamic = 'force-dynamic'
 
 const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業で使えるケーススタディ情報を抽出してください。
 
@@ -36,6 +33,9 @@ const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業で使える�
 
 export async function POST(request: Request) {
   try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    })
     const contentType = request.headers.get('content-type') ?? ''
 
     let textContent = ''
