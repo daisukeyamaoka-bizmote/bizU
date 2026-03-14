@@ -101,7 +101,7 @@ export async function POST(request: Request) {
 会社名: ${contact.company_name}
 部署: ${contact.department ?? ''}
 役職: ${contact.title ?? ''}
-氏名: ${contact.full_name}
+氏名: ${contact.full_name ?? '（担当者様）'}
 
 【企業の直近コンテキスト】
 ${collectedContext || '特になし'}

@@ -363,10 +363,7 @@ export default function SmartImportPage() {
         errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 会社名が空です` })
         continue
       }
-      if (!fullName) {
-        errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 氏名が空です` })
-        continue
-      }
+      // 氏名が空でも法人データとしてインポート可能
 
       const dupe = dupeMap.get(i)
 
@@ -425,8 +422,8 @@ export default function SmartImportPage() {
         }
       }
 
-      // Check exact duplicate for non-flagged rows
-      if (!dupe) {
+      // Check exact duplicate for non-flagged rows (only when name exists)
+      if (!dupe && fullName) {
         const { data: existing } = await supabase
           .from('contacts')
           .select('id')
@@ -443,7 +440,7 @@ export default function SmartImportPage() {
       const roleLevel = getValue(row, 'role_level')
       const insertData: Record<string, unknown> = {
         company_id: companyId,
-        full_name: fullName,
+        full_name: fullName || null,
         department: getValue(row, 'department') || null,
         title: getValue(row, 'title') || null,
         role_level: ROLE_LEVELS.includes(roleLevel as typeof ROLE_LEVELS[number]) ? roleLevel : 'その他',
@@ -503,9 +500,7 @@ export default function SmartImportPage() {
   const missingFields: string[] = []
   const mappedFields = new Set(Object.values(mapping).filter(v => v !== 'skip'))
   if (!mappedFields.has('company_name')) missingFields.push('会社名')
-  // full_name is satisfied by either full_name OR (last_name + first_name)
-  const hasFullName = mappedFields.has('full_name') || (mappedFields.has('last_name') && mappedFields.has('first_name'))
-  if (!hasFullName) missingFields.push('氏名（「氏名」または「姓」+「名」）')
+  // full_name is optional - corporate-only imports may not have names
 
   const exactDupes = duplicates.filter(d => d.level === 'exact')
   const updateDupes = duplicates.filter(d => d.level === 'update')

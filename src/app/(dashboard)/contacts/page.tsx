@@ -155,7 +155,7 @@ export default function ContactsPage() {
               contacts.map((contact) => (
                 <tr key={contact.id} className="hover:bg-neutral-50">
                   <td className="px-4 py-3 text-sm text-neutral-900">{contact.company?.name ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-neutral-900">{contact.full_name}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-neutral-900">{contact.full_name || '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.title ?? contact.role_level}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.letter_count}通</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.last_sent ?? '-'}</td>

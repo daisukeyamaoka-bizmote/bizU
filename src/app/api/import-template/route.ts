@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const headers = [
       '会社名 *',
-      '氏名 *',
+      '氏名',
       '部署',
       '役職',
       '役職レベル',

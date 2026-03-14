@@ -47,7 +47,7 @@ CREATE TABLE target_companies (
 CREATE TABLE contacts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID REFERENCES target_companies(id),
-  full_name TEXT NOT NULL,
+  full_name TEXT,
   department TEXT,
   title TEXT,
   role_level TEXT NOT NULL,
