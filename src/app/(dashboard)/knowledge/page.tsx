@@ -182,6 +182,12 @@ export default function KnowledgePage() {
           })
         }
 
+        if (!res.ok) {
+          const text = await res.text()
+          updated[i] = { ...updated[i], status: 'error', error: `API ${res.status}: ${text.slice(0, 200)}` }
+          setSources([...updated])
+          continue
+        }
         const data = await res.json()
         if (data.error) {
           updated[i] = { ...updated[i], status: 'error', error: data.error }
@@ -194,8 +200,9 @@ export default function KnowledgePage() {
           }
           sourceInfos.push({ type: data.source_type, name: data.source_name })
         }
-      } catch {
-        updated[i] = { ...updated[i], status: 'error', error: '通信エラー' }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        updated[i] = { ...updated[i], status: 'error', error: `通信エラー: ${msg}` }
       }
       setSources([...updated])
     }
