@@ -185,78 +185,127 @@ export default function KnowledgePage() {
     }, stepMs)
   }, [])
 
+  async function callExtractAPI(source: SourceItem): Promise<Response> {
+    if (source.type === 'url') {
+      return fetch('/api/extract-knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: source.url }),
+      })
+    } else {
+      const formData = new FormData()
+      formData.append('file', source.file!)
+      return fetch('/api/extract-knowledge', {
+        method: 'POST',
+        body: formData,
+      })
+    }
+  }
+
+  function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
   async function extractAll() {
     setExtracting(true)
     const updated = [...sources]
     const sourceInfos: { type: string; name: string }[] = []
+    let processedCount = 0
 
     for (let i = 0; i < updated.length; i++) {
       const source = updated[i]
       if (source.status === 'done') continue
 
+      // ファイル間に待機を入れてレート制限を回避
+      if (processedCount > 0) {
+        updated[i] = { ...source, status: 'extracting', stage: 'uploading', progress: 0 }
+        setSources([...updated])
+        // 前のファイル処理後に5秒待機
+        await sleep(5000)
+      }
+
       // Stage 1: Uploading (0-15%)
-      updated[i] = { ...source, status: 'extracting', stage: 'uploading', progress: 0 }
+      updated[i] = { ...updated[i], status: 'extracting', stage: 'uploading', progress: 0 }
       setSources([...updated])
       startProgressAnimation(i, 'uploading', 0, 15)
 
-      try {
-        let res: Response
-        if (source.type === 'url') {
-          res = await fetch('/api/extract-knowledge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: source.url }),
-          })
-        } else {
-          const formData = new FormData()
-          formData.append('file', source.file!)
+      const MAX_RETRIES = 3
+      let lastError = ''
 
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
           // Stage 2: AI Analyzing (15-85%)
           updated[i] = { ...updated[i], stage: 'analyzing', progress: 15 }
           setSources([...updated])
           startProgressAnimation(i, 'analyzing', 15, 85)
 
-          res = await fetch('/api/extract-knowledge', {
-            method: 'POST',
-            body: formData,
-          })
-        }
+          const res = await callExtractAPI(source)
 
-        // Stage 3: Extracting results (85-100%)
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
-        updated[i] = { ...updated[i], stage: 'extracting', progress: 85 }
-        setSources([...updated])
-        startProgressAnimation(i, 'extracting', 85, 98)
-
-        if (!res.ok) {
+          // Stage 3: Extracting results (85-100%)
           if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
-          const text = await res.text()
-          updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: `API ${res.status}: ${text.slice(0, 200)}` }
+          updated[i] = { ...updated[i], stage: 'extracting', progress: 85 }
           setSources([...updated])
-          continue
-        }
-        const data = await res.json()
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+          startProgressAnimation(i, 'extracting', 85, 98)
 
-        if (data.error) {
-          updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: data.error }
-        } else {
+          if (!res.ok) {
+            const text = await res.text()
+            // レート制限エラーの場合はリトライ
+            if (res.status === 429 || (res.status === 500 && text.includes('rate_limit'))) {
+              if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+              const waitSec = 15 * (attempt + 1)
+              lastError = `レート制限 - ${waitSec}秒後にリトライ (${attempt + 1}/${MAX_RETRIES})`
+              updated[i] = { ...updated[i], stage: 'uploading', progress: 0, error: lastError }
+              setSources([...updated])
+              await sleep(waitSec * 1000)
+              continue
+            }
+            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+            lastError = `API ${res.status}: ${text.slice(0, 300)}`
+            break
+          }
+
+          const data = await res.json()
+          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+
+          if (data.error) {
+            if (data.error.includes('rate_limit')) {
+              const waitSec = 15 * (attempt + 1)
+              lastError = `レート制限 - ${waitSec}秒後にリトライ (${attempt + 1}/${MAX_RETRIES})`
+              updated[i] = { ...updated[i], stage: 'uploading', progress: 0, error: lastError }
+              setSources([...updated])
+              await sleep(waitSec * 1000)
+              continue
+            }
+            lastError = data.error
+            break
+          }
+
+          // 成功
           updated[i] = {
             ...updated[i],
             status: 'done',
             progress: 100,
             stage: undefined,
+            error: undefined,
             results: data.items ?? [],
             sourceType: data.source_type,
           }
           sourceInfos.push({ type: data.source_type, name: data.source_name })
+          lastError = ''
+          break
+        } catch (err) {
+          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+          lastError = `通信エラー: ${err instanceof Error ? err.message : String(err)}`
+          break
         }
-      } catch (err) {
+      }
+
+      if (lastError) {
         if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
-        const msg = err instanceof Error ? err.message : String(err)
-        updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: `通信エラー: ${msg}` }
+        updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: lastError }
       }
       setSources([...updated])
+      processedCount++
     }
 
     const results = updated.flatMap(s => s.results)
@@ -330,6 +379,9 @@ export default function KnowledgePage() {
           <p className="mt-1 text-sm text-gray-500">
             URL・PDF・テキストファイルを投入 → AIが営業に使える情報を自動抽出・分類します
           </p>
+          <div className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
+            複数ファイルを一括処理できます。PDF1件あたり30秒〜1分程度かかります。件数が多い場合はAPI制限回避のため自動的に間隔を空けて処理します。
+          </div>
 
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700">クライアント / プロダクト</label>
@@ -444,7 +496,9 @@ export default function KnowledgePage() {
                 </button>
                 {extracting && (
                   <span className="text-xs text-gray-500">
-                    PDF解析にはAI処理のため30秒〜1分ほどかかります
+                    {sources.length > 1
+                      ? `${sources.length}件を順番に処理中... 全体で${Math.ceil(sources.length * 1.5)}分ほどかかる場合があります`
+                      : 'AI処理のため30秒〜1分ほどかかります'}
                   </span>
                 )}
               </div>
