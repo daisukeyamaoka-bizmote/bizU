@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,24 +33,18 @@ const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業で使える�
 
 export async function POST(request: Request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
     const contentType = request.headers.get('content-type') ?? ''
 
     let textContent = ''
     let sourceType = ''
 
     if (contentType.includes('application/json')) {
-      // URL-based extraction
       const { url, text } = await request.json()
 
       if (text) {
-        // Direct text input (from file upload on client side)
         textContent = text
         sourceType = 'file'
       } else if (url) {
-        // Fetch URL content
         const res = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0 bizU CaseStudy Extractor' },
         })
@@ -58,17 +52,14 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'URLの取得に失敗しました' }, { status: 400 })
         }
         textContent = await res.text()
-        // Strip HTML tags for cleaner extraction
         textContent = textContent.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
         textContent = textContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
         textContent = textContent.replace(/<[^>]+>/g, ' ')
         textContent = textContent.replace(/\s+/g, ' ').trim()
-        // Limit to avoid token limits
         textContent = textContent.slice(0, 15000)
         sourceType = 'url'
       }
     } else if (contentType.includes('multipart/form-data')) {
-      // File upload
       const formData = await request.formData()
       const file = formData.get('file') as File | null
       if (!file) {
@@ -76,35 +67,25 @@ export async function POST(request: Request) {
       }
 
       if (file.type === 'application/pdf') {
-        // For PDF, read as base64 and send to Claude with document support
         const arrayBuffer = await file.arrayBuffer()
         const base64 = Buffer.from(arrayBuffer).toString('base64')
 
-        const message = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4096,
+        const response = await callClaude({
           messages: [
             {
               role: 'user',
               content: [
                 {
                   type: 'document',
-                  source: {
-                    type: 'base64',
-                    media_type: 'application/pdf',
-                    data: base64,
-                  },
+                  source: { type: 'base64', media_type: 'application/pdf', data: base64 },
                 },
-                {
-                  type: 'text',
-                  text: EXTRACTION_PROMPT,
-                },
+                { type: 'text', text: EXTRACTION_PROMPT },
               ],
             },
           ],
         })
 
-        const responseText = message.content[0].type === 'text' ? message.content[0].text : ''
+        const responseText = getTextFromResponse(response)
         const jsonMatch = responseText.match(/\{[\s\S]*\}/)
         if (!jsonMatch) {
           return NextResponse.json({ error: '抽出結果の解析に失敗しました' }, { status: 500 })
@@ -112,7 +93,6 @@ export async function POST(request: Request) {
         return NextResponse.json(JSON.parse(jsonMatch[0]))
       }
 
-      // For text files (txt, csv, etc.)
       textContent = await file.text()
       textContent = textContent.slice(0, 15000)
       sourceType = 'file'
@@ -122,9 +102,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'テキストが見つかりません' }, { status: 400 })
     }
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+    const response = await callClaude({
       messages: [
         {
           role: 'user',
@@ -133,7 +111,7 @@ export async function POST(request: Request) {
       ],
     })
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : ''
+    const responseText = getTextFromResponse(response)
     const jsonMatch = responseText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return NextResponse.json({ error: '抽出結果の解析に失敗しました' }, { status: 500 })

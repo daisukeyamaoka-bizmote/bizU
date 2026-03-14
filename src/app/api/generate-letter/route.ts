@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,9 +32,6 @@ const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルで�
 
 export async function POST(request: Request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
     const body = await request.json()
     const { contact, client, caseStudy, whyYouAngle, sendTrigger, collectedContext, knowledgeContext } = body
 
@@ -74,16 +71,15 @@ ${knowledgeSection}
 bizmote株式会社
 代表取締役 山岡大輔`
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
+    const response = await callClaude({
       system: SYSTEM_PROMPT,
+      max_tokens: 2048,
       messages: [
         { role: 'user', content: userPrompt },
       ],
     })
 
-    const letter = message.content[0].type === 'text' ? message.content[0].text : ''
+    const letter = getTextFromResponse(response)
 
     return NextResponse.json({ letter })
   } catch (error) {

@@ -1,18 +1,14 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
     const { companyName } = await request.json()
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const response = await callClaude({
       max_tokens: 1024,
       messages: [
         {
@@ -32,7 +28,7 @@ export async function POST(request: Request) {
       ],
     })
 
-    const context = message.content[0].type === 'text' ? message.content[0].text : ''
+    const context = getTextFromResponse(response)
 
     return NextResponse.json({ context })
   } catch (error) {
