@@ -24,6 +24,13 @@ bizUのフィールド一覧:
 - address（住所）
 - industry（業種）
 - info_source（情報ソース）
+- employee_scale（従業員数・社員数）
+- revenue_scale（売上・売上高・年商）
+- website（会社HP・ホームページ・URL）
+- phone（代表電話番号・TEL）
+- founded_date（設立年月日・創業日・創立日）
+- fiscal_month（決算月・決算期）
+- representative_email（代表メール・メールアドレス）
 
 マッピングできない列はnullにしてください。
 表記ゆれを吸収してください（例:「氏名（漢字）」→「full_name」、「職位」→「title」）

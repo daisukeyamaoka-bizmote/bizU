@@ -11,7 +11,16 @@ type ContactRow = {
   department: string | null
   title: string | null
   role_level: string
-  company: { name: string; employee_scale: string | null; revenue_scale: string | null } | null
+  company: {
+    name: string
+    employee_scale: string | null
+    revenue_scale: string | null
+    website: string | null
+    phone: string | null
+    founded_date: string | null
+    fiscal_month: string | null
+    representative_email: string | null
+  } | null
   company_id: string | null
   letter_count: number
   last_sent: string | null
@@ -103,7 +112,7 @@ export default function ContactsPage() {
       .from('contacts')
       .select(`
         id, full_name, department, title, role_level, company_id, created_at,
-        target_companies!inner(name, industry, employee_scale, revenue_scale)
+        target_companies!inner(name, industry, employee_scale, revenue_scale, website, phone, founded_date, fiscal_month, representative_email)
       `)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
@@ -145,6 +154,11 @@ export default function ContactsPage() {
           name: company.name,
           employee_scale: company.employee_scale ?? null,
           revenue_scale: company.revenue_scale ?? null,
+          website: company.website ?? null,
+          phone: company.phone ?? null,
+          founded_date: company.founded_date ?? null,
+          fiscal_month: company.fiscal_month ?? null,
+          representative_email: company.representative_email ?? null,
         } : null,
         company_id: c.company_id,
         letter_count: letters.length,
@@ -360,6 +374,11 @@ export default function ContactsPage() {
               >
                 売上 {sortKey === 'revenue_scale' && (sortDir === 'asc' ? '↑' : '↓')}
               </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">会社HP</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">代表電話</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">設立</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">決算月</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">代表メール</th>
               <th
                 onClick={() => handleSortChange('letter_count')}
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
@@ -377,13 +396,13 @@ export default function ContactsPage() {
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={13} className="px-4 py-8 text-center text-sm text-neutral-500">
                   読み込み中...
                 </td>
               </tr>
             ) : sortedContacts.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={13} className="px-4 py-8 text-center text-sm text-neutral-500">
                   コンタクトがありません
                 </td>
               </tr>
@@ -406,6 +425,17 @@ export default function ContactsPage() {
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.title ?? contact.role_level}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.employee_scale ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.revenue_scale ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">
+                    {contact.company?.website ? (
+                      <a href={contact.company.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-[120px]" title={contact.company.website}>
+                        {contact.company.website.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                      </a>
+                    ) : '-'}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.phone ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.founded_date ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.fiscal_month ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{contact.company?.representative_email ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.letter_count}通</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{contact.last_sent ?? '-'}</td>
                 </tr>

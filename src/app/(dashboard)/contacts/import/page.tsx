@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx'
 import Link from 'next/link'
 
 type ParsedRow = Record<string, string>
-type MappingField = 'company_name' | 'full_name' | 'last_name' | 'first_name' | 'department' | 'title' | 'role_level' | 'postal_code' | 'address' | 'industry' | 'info_source' | null
+type MappingField = 'company_name' | 'full_name' | 'last_name' | 'first_name' | 'department' | 'title' | 'role_level' | 'postal_code' | 'address' | 'industry' | 'info_source' | 'employee_scale' | 'revenue_scale' | 'website' | 'phone' | 'founded_date' | 'fiscal_month' | 'representative_email' | null
 
 type DuplicateItem = {
   rowIndex: number
@@ -37,6 +37,13 @@ const FIELD_OPTIONS: { value: MappingField | 'skip'; label: string }[] = [
   { value: 'address', label: '住所' },
   { value: 'industry', label: '業種' },
   { value: 'info_source', label: '情報ソース' },
+  { value: 'employee_scale', label: '従業員数' },
+  { value: 'revenue_scale', label: '売上' },
+  { value: 'website', label: '会社HP' },
+  { value: 'phone', label: '代表電話番号' },
+  { value: 'founded_date', label: '設立年月日' },
+  { value: 'fiscal_month', label: '決算月' },
+  { value: 'representative_email', label: '代表メール' },
   { value: 'skip', label: 'スキップ' },
 ]
 
@@ -143,6 +150,13 @@ export default function SmartImportPage() {
         else if (hNorm.includes('郵便')) { newMapping[h] = 'postal_code'; newStatus[h] = 'auto' }
         else if (hNorm.includes('住所')) { newMapping[h] = 'address'; newStatus[h] = 'auto' }
         else if (hNorm.includes('業種')) { newMapping[h] = 'industry'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('従業員') || hNorm.includes('社員数') || hNorm.includes('人数')) { newMapping[h] = 'employee_scale'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('売上') || hNorm.includes('売上高') || hNorm.includes('年商')) { newMapping[h] = 'revenue_scale'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('HP') || hNorm.includes('ホームページ') || hNorm.includes('URL') || hNorm.includes('ウェブ') || hNorm.includes('サイト')) { newMapping[h] = 'website'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('電話') || hNorm.includes('TEL') || hNorm.includes('tel')) { newMapping[h] = 'phone'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('設立') || hNorm.includes('創業') || hNorm.includes('創立')) { newMapping[h] = 'founded_date'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('決算')) { newMapping[h] = 'fiscal_month'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('メール') || hNorm.includes('mail') || hNorm.includes('Mail') || hNorm.includes('email') || hNorm.includes('Email')) { newMapping[h] = 'representative_email'; newStatus[h] = 'auto' }
         else { newMapping[h] = 'skip'; newStatus[h] = 'skip' }
       }
       setMapping(newMapping)
@@ -411,12 +425,30 @@ export default function SmartImportPage() {
       const industry = getValue(row, 'industry') || defaultIndustry
       let companyId = companyCache.get(companyName)
 
+      // Build company detail fields from row
+      const companyDetails: Record<string, string> = {}
+      const empScale = getValue(row, 'employee_scale')
+      const revScale = getValue(row, 'revenue_scale')
+      const website = getValue(row, 'website')
+      const phone = getValue(row, 'phone')
+      const foundedDate = getValue(row, 'founded_date')
+      const fiscalMonth = getValue(row, 'fiscal_month')
+      const repEmail = getValue(row, 'representative_email')
+      if (empScale) companyDetails.employee_scale = empScale
+      if (revScale) companyDetails.revenue_scale = revScale
+      if (website) companyDetails.website = website
+      if (phone) companyDetails.phone = phone
+      if (foundedDate) companyDetails.founded_date = foundedDate
+      if (fiscalMonth) companyDetails.fiscal_month = fiscalMonth
+      if (repEmail) companyDetails.representative_email = repEmail
+
       if (!companyId) {
         const { data: newCompany, error: companyError } = await supabase
           .from('target_companies')
           .insert({
             name: companyName,
             industry: INDUSTRIES.includes(industry as typeof INDUSTRIES[number]) ? industry : 'その他',
+            ...companyDetails,
           })
           .select('id')
           .single()
@@ -428,6 +460,12 @@ export default function SmartImportPage() {
           errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 企業「${companyName}」の作成に失敗しました${companyError ? ' - ' + companyError.message : ''}` })
           continue
         }
+      } else if (Object.keys(companyDetails).length > 0) {
+        // Update existing company with new details if provided
+        await supabase
+          .from('target_companies')
+          .update({ ...companyDetails, updated_at: new Date().toISOString() })
+          .eq('id', companyId)
       }
 
       // Check exact duplicate for non-flagged rows (only when name exists)
