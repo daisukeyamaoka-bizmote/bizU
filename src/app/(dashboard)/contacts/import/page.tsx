@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ROLE_LEVELS, INDUSTRIES } from '@/lib/constants'
+import { useNotification } from '@/lib/useNotification'
 import * as XLSX from 'xlsx'
 import Link from 'next/link'
 
@@ -40,6 +41,13 @@ const FIELD_OPTIONS: { value: MappingField | 'skip'; label: string }[] = [
 ]
 
 export default function SmartImportPage() {
+  const { requestPermission, notify } = useNotification()
+
+  // Request notification permission on mount
+  useEffect(() => {
+    requestPermission()
+  }, [requestPermission])
+
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [fileName, setFileName] = useState('')
   const [parsedData, setParsedData] = useState<ParsedRow[]>([])
@@ -479,6 +487,12 @@ export default function SmartImportPage() {
     setProgress({ current: 0, total: 0, phase: '' })
     setStep(5)
     setImporting(false)
+
+    // Desktop notification
+    notify(
+      'インポート完了',
+      `新規${added}件 / 更新${updated}件 / スキップ${skipped}件 / エラー${errors.length}件`
+    )
   }
 
   // Download error rows as Excel

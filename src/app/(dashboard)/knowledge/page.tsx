@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useNotification } from '@/lib/useNotification'
 
 type KnowledgeItem = {
   id: string
@@ -57,6 +58,12 @@ const CATEGORY_LABELS: Record<string, { text: string; color: string }> = {
 }
 
 export default function KnowledgePage() {
+  const { requestPermission, notify } = useNotification()
+
+  useEffect(() => {
+    requestPermission()
+  }, [requestPermission])
+
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
@@ -326,7 +333,12 @@ export default function KnowledgePage() {
         setSavedMessage(`${savedCount}件のナレッジを自動保存しました`)
         setTimeout(() => setSavedMessage(null), 5000)
         loadItems()
+        // Desktop notification
+        notify('ナレッジ抽出完了', `${savedCount}件のナレッジを保存しました`)
       }
+    } else {
+      // Notify even if no results
+      notify('ナレッジ抽出完了', '抽出結果が0件でした')
     }
   }
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WHY_YOU_ANGLES, SEND_TRIGGERS } from '@/lib/constants'
+import { useNotification } from '@/lib/useNotification'
 
 type Contact = {
   id: string
@@ -28,6 +29,12 @@ type CaseStudy = {
 }
 
 export default function NewLetterPage() {
+  const { requestPermission, notify } = useNotification()
+
+  useEffect(() => {
+    requestPermission()
+  }, [requestPermission])
+
   const [contacts, setContacts] = useState<Contact[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([])
@@ -156,8 +163,10 @@ export default function NewLetterPage() {
       const data = await res.json()
       setGeneratedLetter(data.letter ?? '')
       setGeneratedSources(data.sources ?? null)
+      notify('手紙生成完了', `${selectedContact.full_name}宛の手紙が生成されました`)
     } catch {
       setGeneratedLetter('生成に失敗しました。')
+      notify('手紙生成エラー', '生成に失敗しました')
     }
     setGenerating(false)
   }
