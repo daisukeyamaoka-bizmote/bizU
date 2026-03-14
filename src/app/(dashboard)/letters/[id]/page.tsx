@@ -40,72 +40,72 @@ export default async function LetterDetailPage({
   return (
     <div>
       <div className="flex items-center gap-4">
-        <Link href="/letters" className="text-sm text-blue-600 hover:underline">
+        <Link href="/letters" className="text-sm text-neutral-900 hover:underline">
           ← 手紙一覧
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">手紙詳細</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">手紙詳細</h1>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* メタ情報 */}
         <div className="space-y-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-500">宛先</h3>
-            <p className="mt-1 font-medium text-gray-900">{contact?.full_name}</p>
-            <p className="text-sm text-gray-600">
+          <div className="rounded-lg border border-neutral-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-neutral-500">宛先</h3>
+            <p className="mt-1 font-medium text-neutral-900">{contact?.full_name}</p>
+            <p className="text-sm text-neutral-600">
               {company?.name} / {contact?.department} / {contact?.title}
             </p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-500">クライアント</h3>
-            <p className="mt-1 text-sm text-gray-900">{client?.name} / {client?.product_name}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-neutral-500">クライアント</h3>
+            <p className="mt-1 text-sm text-neutral-900">{client?.name} / {client?.product_name}</p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-500">設計</h3>
-            <p className="mt-1 text-sm text-gray-900">切り口: {letter.why_you_angle}</p>
-            <p className="text-sm text-gray-900">トリガー: {letter.send_trigger ?? '-'}</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-neutral-500">設計</h3>
+            <p className="mt-1 text-sm text-neutral-900">切り口: {letter.why_you_angle}</p>
+            <p className="text-sm text-neutral-900">トリガー: {letter.send_trigger ?? '-'}</p>
           </div>
           {caseStudy && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-500">ケーススタディ</h3>
-              <p className="mt-1 text-sm text-gray-900">{caseStudy.company_name}</p>
-              <p className="text-xs text-gray-600">{caseStudy.challenge_tags?.join(', ')}</p>
-              <p className="text-xs text-gray-600">{caseStudy.result_summary}</p>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4">
+              <h3 className="text-sm font-semibold text-neutral-500">ケーススタディ</h3>
+              <p className="mt-1 text-sm text-neutral-900">{caseStudy.company_name}</p>
+              <p className="text-xs text-neutral-600">{caseStudy.challenge_tags?.join(', ')}</p>
+              <p className="text-xs text-neutral-600">{caseStudy.result_summary}</p>
             </div>
           )}
         </div>
 
         {/* 手紙本文 */}
         <div className="lg:col-span-2">
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="rounded-lg border border-neutral-200 bg-white p-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-500">手紙本文</h3>
-              <p className="text-xs text-gray-400">{letter.body_text.length}文字</p>
+              <h3 className="text-sm font-semibold text-neutral-500">手紙本文</h3>
+              <p className="text-xs text-neutral-400">{letter.body_text.length}文字</p>
             </div>
-            <div className="mt-4 whitespace-pre-wrap font-serif text-sm leading-relaxed text-gray-900">
+            <div className="mt-4 whitespace-pre-wrap font-serif text-sm leading-relaxed text-neutral-900">
               {letter.body_text}
             </div>
           </div>
 
           {/* 反応記録 */}
-          <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-900">反応記録</h3>
+          <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
+            <h3 className="text-lg font-semibold text-neutral-900">反応記録</h3>
             {(reactions ?? []).length > 0 && (
               <div className="mt-4 space-y-3">
                 {(reactions ?? []).map((r) => (
-                  <div key={r.id} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <div key={r.id} className="rounded-lg border border-neutral-100 bg-neutral-50 p-3">
                     <div className="flex items-center gap-3">
-                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                      <span className="rounded-full bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-900">
                         {r.reaction_type}
                       </span>
-                      <span className="text-xs text-gray-500">{r.reacted_at}</span>
+                      <span className="text-xs text-neutral-500">{r.reacted_at}</span>
                       {r.reaction_channel && (
-                        <span className="text-xs text-gray-500">({r.reaction_channel})</span>
+                        <span className="text-xs text-neutral-500">({r.reaction_channel})</span>
                       )}
                     </div>
-                    {r.memo && <p className="mt-2 text-sm text-gray-700">{r.memo}</p>}
+                    {r.memo && <p className="mt-2 text-sm text-neutral-700">{r.memo}</p>}
                     {r.next_action && (
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-neutral-500">
                         次のアクション: {r.next_action}
                         {r.next_action_date ? ` (${r.next_action_date})` : ''}
                       </p>

@@ -237,17 +237,17 @@ export default function CasesPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">ケーススタディ管理</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">ケーススタディ管理</h1>
         <div className="flex gap-2">
           <button
             onClick={() => { setShowExtract(!showExtract); setShowForm(false) }}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
           >
             AI一括抽出
           </button>
           <button
             onClick={() => { setShowForm(!showForm); setShowExtract(false) }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
           >
             + 手動追加
           </button>
@@ -256,18 +256,18 @@ export default function CasesPage() {
 
       {/* AI一括抽出パネル */}
       {showExtract && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">ケーススタディ一括抽出</h2>
-          <p className="mt-1 text-sm text-gray-500">
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">ケーススタディ一括抽出</h2>
+          <p className="mt-1 text-sm text-neutral-500">
             複数のURL・ファイルをまとめて投入 → AIが自動でケーススタディを抽出します
           </p>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700">クライアント</label>
+            <label className="block text-sm font-medium text-neutral-700">クライアント</label>
             <select
               value={formClientId}
               onChange={(e) => setFormClientId(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 sm:w-64"
+              className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 sm:w-64"
             >
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
@@ -278,25 +278,25 @@ export default function CasesPage() {
           {/* ソース追加 */}
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">URLを追加（複数可：改行やカンマ区切り）</label>
+              <label className="block text-sm font-medium text-neutral-700">URLを追加（複数可：改行やカンマ区切り）</label>
               <textarea
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 placeholder={"https://example.com/case1\nhttps://example.com/case2"}
                 rows={3}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
               <button
                 onClick={addUrl}
                 disabled={!urlInput.trim()}
-                className="mt-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                className="mt-2 rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-50"
               >
                 URLを追加
               </button>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">ファイルを追加（複数選択可）</label>
-              <label className="mt-1 inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <label className="block text-sm font-medium text-neutral-700">ファイルを追加（複数選択可）</label>
+              <label className="mt-1 inline-flex cursor-pointer items-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 ファイルを選択（PDF・テキスト）
                 <input
                   type="file"
@@ -313,37 +313,37 @@ export default function CasesPage() {
           {sources.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-neutral-700">
                   ソース: {sources.length}件
-                  {doneCount > 0 && <span className="text-green-600"> ({doneCount}件完了)</span>}
+                  {doneCount > 0 && <span className="text-neutral-700"> ({doneCount}件完了)</span>}
                   {errorCount > 0 && <span className="text-red-600"> ({errorCount}件エラー)</span>}
                 </p>
                 <button
                   onClick={() => setSources([])}
-                  className="text-sm text-gray-400 hover:text-gray-600"
+                  className="text-sm text-neutral-400 hover:text-neutral-600"
                 >
                   すべてクリア
                 </button>
               </div>
               <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">
                 {sources.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                  <div key={s.id} className="flex items-center gap-3 rounded-lg bg-neutral-50 px-3 py-2">
                     <span className="text-xs">
-                      {s.status === 'pending' && '⏳'}
-                      {s.status === 'extracting' && '🔄'}
-                      {s.status === 'done' && '✅'}
-                      {s.status === 'error' && '❌'}
+                      {s.status === 'pending' && '[待機]'}
+                      {s.status === 'extracting' && '[処理中]'}
+                      {s.status === 'done' && '[完了]'}
+                      {s.status === 'error' && '[エラー]'}
                     </span>
-                    <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
+                    <span className="flex-1 truncate text-sm text-neutral-700">{s.name}</span>
                     {s.status === 'done' && (
-                      <span className="text-xs text-green-600">{s.results.length}件抽出</span>
+                      <span className="text-xs text-neutral-700">{s.results.length}件抽出</span>
                     )}
                     {s.status === 'error' && (
                       <span className="text-xs text-red-600">{s.error}</span>
                     )}
                     <button
                       onClick={() => removeSource(s.id)}
-                      className="text-xs text-gray-400 hover:text-red-500"
+                      className="text-xs text-neutral-400 hover:text-red-500"
                     >
                       削除
                     </button>
@@ -354,7 +354,7 @@ export default function CasesPage() {
               <button
                 onClick={extractAll}
                 disabled={extracting || pendingCount === 0}
-                className="mt-3 rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                className="mt-3 rounded-lg bg-neutral-900 px-6 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
               >
                 {extracting ? '抽出中...' : `${pendingCount > 0 ? pendingCount + '件を' : ''}一括抽出する`}
               </button>
@@ -363,37 +363,37 @@ export default function CasesPage() {
 
           {/* 抽出結果 */}
           {allResults.length > 0 && (
-            <div className="mt-6 border-t border-gray-200 pt-4">
+            <div className="mt-6 border-t border-neutral-200 pt-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-neutral-900">
                   抽出結果: {allResults.length}件のケーススタディ
                 </h3>
                 <button
                   onClick={saveAllResults}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
                 >
                   すべて登録する
                 </button>
               </div>
               <div className="mt-3 space-y-3">
                 {allResults.map((cs, i) => (
-                  <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div key={i} className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="font-medium text-gray-900">{cs.company_name}</p>
-                        <p className="text-sm text-gray-600">業種: {cs.industry}</p>
+                        <p className="font-medium text-neutral-900">{cs.company_name}</p>
+                        <p className="text-sm text-neutral-600">業種: {cs.industry}</p>
                         <div className="mt-2 flex flex-wrap gap-1">
                           {cs.challenge_tags.map((tag) => (
-                            <span key={tag} className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+                            <span key={tag} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
                               {tag}
                             </span>
                           ))}
                         </div>
-                        <p className="mt-2 text-sm text-gray-700">{cs.result_summary}</p>
+                        <p className="mt-2 text-sm text-neutral-700">{cs.result_summary}</p>
                       </div>
                       <button
                         onClick={() => saveResult(cs)}
-                        className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                        className="rounded-lg bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800"
                       >
                         登録
                       </button>
@@ -408,15 +408,15 @@ export default function CasesPage() {
 
       {/* 手動追加フォーム */}
       {showForm && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">ケーススタディを手動追加</h2>
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">ケーススタディを手動追加</h2>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">クライアント</label>
+              <label className="block text-sm font-medium text-neutral-700">クライアント</label>
               <select
                 value={formClientId}
                 onChange={(e) => setFormClientId(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -424,19 +424,19 @@ export default function CasesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">事例企業名</label>
+              <label className="block text-sm font-medium text-neutral-700">事例企業名</label>
               <input
                 value={formCompanyName}
                 onChange={(e) => setFormCompanyName(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">業種</label>
+              <label className="block text-sm font-medium text-neutral-700">業種</label>
               <select
                 value={formIndustry}
                 onChange={(e) => setFormIndustry(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {INDUSTRIES.map((i) => (
                   <option key={i} value={i}>{i}</option>
@@ -444,7 +444,7 @@ export default function CasesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">解決課題タグ（クリックで選択）</label>
+              <label className="block text-sm font-medium text-neutral-700">解決課題タグ（クリックで選択）</label>
               <div className="mt-2 flex flex-wrap gap-2">
                 {CHALLENGE_TAG_PRESETS.map((tag) => {
                   const selected = formChallengeTags.includes(tag)
@@ -459,8 +459,8 @@ export default function CasesPage() {
                       }
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                         selected
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          ? 'bg-neutral-900 text-white'
+                          : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                       }`}
                     >
                       {tag}
@@ -469,18 +469,18 @@ export default function CasesPage() {
                 })}
               </div>
               {formChallengeTags.length > 0 && (
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-2 text-xs text-neutral-500">
                   選択中: {formChallengeTags.join(', ')}
                 </p>
               )}
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">効果指標</label>
+              <label className="block text-sm font-medium text-neutral-700">効果指標</label>
               <input
                 value={formResultSummary}
                 onChange={(e) => setFormResultSummary(e.target.value)}
                 placeholder="面接工数60%削減"
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
             </div>
           </div>
@@ -488,13 +488,13 @@ export default function CasesPage() {
             <button
               onClick={handleSave}
               disabled={saving || !formCompanyName}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
             >
               {saving ? '保存中...' : '保存する'}
             </button>
             <button
               onClick={() => setShowForm(false)}
-              className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700"
+              className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700"
             >
               キャンセル
             </button>
@@ -503,42 +503,42 @@ export default function CasesPage() {
       )}
 
       {/* テーブル */}
-      <div className="mt-6 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="min-w-full divide-y divide-neutral-200">
+          <thead className="bg-neutral-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">クライアント</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">事例企業</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">業種</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">課題タグ</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">効果</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">クライアント</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">事例企業</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">業種</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">課題タグ</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">効果</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">読み込み中...</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-neutral-500">読み込み中...</td>
               </tr>
             ) : cases.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">ケーススタディがありません</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-neutral-500">ケーススタディがありません</td>
               </tr>
             ) : (
               cases.map((cs) => (
-                <tr key={cs.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-900">{cs.client_name}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{cs.company_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{cs.industry}</td>
+                <tr key={cs.id} className="hover:bg-neutral-50">
+                  <td className="px-4 py-3 text-sm text-neutral-900">{cs.client_name}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-neutral-900">{cs.company_name}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{cs.industry}</td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex flex-wrap gap-1">
                       {cs.challenge_tags.map((tag) => (
-                        <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                        <span key={tag} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
                           {tag}
                         </span>
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{cs.result_summary}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">{cs.result_summary}</td>
                 </tr>
               ))
             )}

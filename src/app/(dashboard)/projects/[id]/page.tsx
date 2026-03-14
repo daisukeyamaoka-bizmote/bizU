@@ -344,14 +344,14 @@ export default function ProjectDetailPage() {
   }
 
   const statusLabel: Record<string, { text: string; color: string }> = {
-    pending: { text: '未生成', color: 'bg-gray-100 text-gray-600' },
-    generated: { text: '生成済', color: 'bg-yellow-100 text-yellow-700' },
-    sent: { text: '送付済', color: 'bg-green-100 text-green-700' },
-    reacted: { text: '反応あり', color: 'bg-blue-100 text-blue-700' },
-    skipped: { text: 'スキップ', color: 'bg-gray-100 text-gray-400' },
+    pending: { text: '未生成', color: 'bg-neutral-100 text-neutral-600' },
+    generated: { text: '生成済', color: 'bg-neutral-100 text-neutral-700' },
+    sent: { text: '送付済', color: 'bg-neutral-100 text-neutral-700' },
+    reacted: { text: '反応あり', color: 'bg-neutral-100 text-neutral-700' },
+    skipped: { text: 'スキップ', color: 'bg-neutral-100 text-neutral-400' },
   }
 
-  if (!project) return <p className="text-sm text-gray-500">読み込み中...</p>
+  if (!project) return <p className="text-sm text-neutral-500">読み込み中...</p>
 
   const pendingCount = contacts.filter(c => c.status === 'pending').length
   const generatedCount = contacts.filter(c => c.status === 'generated').length
@@ -360,16 +360,16 @@ export default function ProjectDetailPage() {
   return (
     <div>
       <div className="flex items-center gap-4">
-        <Link href="/projects" className="text-sm text-blue-600 hover:underline">← プロジェクト一覧</Link>
+        <Link href="/projects" className="text-sm text-neutral-900 hover:underline">← プロジェクト一覧</Link>
       </div>
 
       {/* プロジェクトヘッダー */}
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-            {project.description && <p className="mt-1 text-sm text-gray-500">{project.description}</p>}
-            <div className="mt-2 flex gap-4 text-sm text-gray-600">
+            <h1 className="text-2xl font-bold text-neutral-900">{project.name}</h1>
+            {project.description && <p className="mt-1 text-sm text-neutral-500">{project.description}</p>}
+            <div className="mt-2 flex gap-4 text-sm text-neutral-600">
               {project.why_you_angle && <span>切り口: {project.why_you_angle}</span>}
               {project.send_trigger && <span>トリガー: {project.send_trigger}</span>}
             </div>
@@ -378,21 +378,21 @@ export default function ProjectDetailPage() {
 
         {/* KPI */}
         <div className="mt-4 grid grid-cols-4 gap-4">
-          <div className="rounded-lg bg-gray-50 p-3 text-center">
-            <p className="text-2xl font-bold text-gray-900">{contacts.length}</p>
-            <p className="text-xs text-gray-500">対象者</p>
+          <div className="rounded-lg bg-neutral-50 p-3 text-center">
+            <p className="text-2xl font-bold text-neutral-900">{contacts.length}</p>
+            <p className="text-xs text-neutral-500">対象者</p>
           </div>
-          <div className="rounded-lg bg-gray-50 p-3 text-center">
-            <p className="text-2xl font-bold text-yellow-600">{generatedCount}</p>
-            <p className="text-xs text-gray-500">生成済</p>
+          <div className="rounded-lg bg-neutral-50 p-3 text-center">
+            <p className="text-2xl font-bold text-neutral-600">{generatedCount}</p>
+            <p className="text-xs text-neutral-500">生成済</p>
           </div>
-          <div className="rounded-lg bg-gray-50 p-3 text-center">
-            <p className="text-2xl font-bold text-green-600">{sentCount}</p>
-            <p className="text-xs text-gray-500">送付済</p>
+          <div className="rounded-lg bg-neutral-50 p-3 text-center">
+            <p className="text-2xl font-bold text-neutral-700">{sentCount}</p>
+            <p className="text-xs text-neutral-500">送付済</p>
           </div>
-          <div className="rounded-lg bg-gray-50 p-3 text-center">
-            <p className="text-2xl font-bold text-blue-600">{project.reacted_count}</p>
-            <p className="text-xs text-gray-500">反応</p>
+          <div className="rounded-lg bg-neutral-50 p-3 text-center">
+            <p className="text-2xl font-bold text-neutral-900">{project.reacted_count}</p>
+            <p className="text-xs text-neutral-500">反応</p>
           </div>
         </div>
       </div>
@@ -401,7 +401,7 @@ export default function ProjectDetailPage() {
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           onClick={() => { setShowUpload(true); searchContacts() }}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
         >
           + 対象者を追加
         </button>
@@ -409,7 +409,7 @@ export default function ProjectDetailPage() {
           <button
             onClick={bulkGenerate}
             disabled={bulkGenerating}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
           >
             {bulkGenerating
               ? `一括生成中... (${bulkProgress.current}/${bulkProgress.total})`
@@ -421,8 +421,8 @@ export default function ProjectDetailPage() {
 
       {/* 対象者追加パネル */}
       {showUpload && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">対象者を追加</h2>
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">対象者を追加</h2>
           <div className="mt-4 flex gap-2">
             <input
               type="text"
@@ -430,11 +430,11 @@ export default function ProjectDetailPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && searchContacts()}
               placeholder="氏名で検索（空欄で全件表示）"
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+              className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
             />
             <button
               onClick={searchContacts}
-              className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+              className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
             >
               検索
             </button>
@@ -443,28 +443,28 @@ export default function ProjectDetailPage() {
           {availableContacts.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500">{availableContacts.length}件のコンタクト</p>
+                <p className="text-sm text-neutral-500">{availableContacts.length}件のコンタクト</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setSelectedContactIds(new Set(availableContacts.map(c => c.id)))}
-                    className="text-sm text-blue-600 hover:underline"
+                    className="text-sm text-neutral-900 hover:underline"
                   >
                     全選択
                   </button>
                   <button
                     onClick={addAllContacts}
                     disabled={addingContacts}
-                    className="rounded-lg bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-lg bg-neutral-900 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
                   >
                     全件追加
                   </button>
                 </div>
               </div>
-              <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-200">
+              <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-neutral-200">
                 {availableContacts.map((c) => (
                   <label
                     key={c.id}
-                    className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2 hover:bg-gray-50"
+                    className="flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-3 py-2 hover:bg-neutral-50"
                   >
                     <input
                       type="checkbox"
@@ -476,9 +476,9 @@ export default function ProjectDetailPage() {
                         setSelectedContactIds(next)
                       }}
                     />
-                    <span className="text-sm font-medium text-gray-900">{c.full_name}</span>
-                    <span className="text-sm text-gray-500">{c.company_name}</span>
-                    <span className="text-sm text-gray-400">{c.title}</span>
+                    <span className="text-sm font-medium text-neutral-900">{c.full_name}</span>
+                    <span className="text-sm text-neutral-500">{c.company_name}</span>
+                    <span className="text-sm text-neutral-400">{c.title}</span>
                   </label>
                 ))}
               </div>
@@ -486,7 +486,7 @@ export default function ProjectDetailPage() {
                 <button
                   onClick={addSelectedContacts}
                   disabled={addingContacts}
-                  className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="mt-3 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
                 >
                   {addingContacts ? '追加中...' : `選択した${selectedContactIds.size}件を追加`}
                 </button>
@@ -496,7 +496,7 @@ export default function ProjectDetailPage() {
 
           <button
             onClick={() => setShowUpload(false)}
-            className="mt-4 text-sm text-gray-500 hover:underline"
+            className="mt-4 text-sm text-neutral-500 hover:underline"
           >
             閉じる
           </button>
@@ -504,26 +504,26 @@ export default function ProjectDetailPage() {
       )}
 
       {/* 対象者テーブル */}
-      <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="mt-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="min-w-full divide-y divide-neutral-200">
+          <thead className="bg-neutral-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">会社名</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">氏名</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">役職</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">ステータス</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">送付日</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">操作</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">会社名</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">氏名</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">役職</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">ステータス</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">送付日</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">操作</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">読み込み中...</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">読み込み中...</td>
               </tr>
             ) : contacts.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">
                   対象者がいません。「+ 対象者を追加」から追加してください。
                 </td>
               </tr>
@@ -531,42 +531,42 @@ export default function ProjectDetailPage() {
               contacts.map((pc) => {
                 const s = statusLabel[pc.status] ?? statusLabel.pending
                 return (
-                  <tr key={pc.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{pc.company_name}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{pc.full_name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{pc.title ?? pc.role_level}</td>
+                  <tr key={pc.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3 text-sm text-neutral-900">{pc.company_name}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-neutral-900">{pc.full_name}</td>
+                    <td className="px-4 py-3 text-sm text-neutral-600">{pc.title ?? pc.role_level}</td>
                     <td className="px-4 py-3 text-sm">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
                         {s.text}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{pc.sent_at ?? '-'}</td>
+                    <td className="px-4 py-3 text-sm text-neutral-600">{pc.sent_at ?? '-'}</td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex gap-2">
                         {pc.status === 'pending' && (
                           <button
                             onClick={() => generateLetterForContact(pc)}
                             disabled={generatingId === pc.contact_id}
-                            className="text-blue-600 hover:underline disabled:opacity-50"
+                            className="text-neutral-900 hover:underline disabled:opacity-50"
                           >
                             {generatingId === pc.contact_id ? '生成中...' : '生成'}
                           </button>
                         )}
                         {pc.status === 'generated' && pc.letter_id && (
                           <>
-                            <Link href={`/letters/${pc.letter_id}`} className="text-blue-600 hover:underline">
+                            <Link href={`/letters/${pc.letter_id}`} className="text-neutral-900 hover:underline">
                               確認
                             </Link>
                             <button
                               onClick={() => markAsSent(pc)}
-                              className="text-green-600 hover:underline"
+                              className="text-neutral-700 hover:underline"
                             >
                               送付済にする
                             </button>
                           </>
                         )}
                         {pc.status === 'sent' && pc.letter_id && (
-                          <Link href={`/letters/${pc.letter_id}`} className="text-blue-600 hover:underline">
+                          <Link href={`/letters/${pc.letter_id}`} className="text-neutral-900 hover:underline">
                             詳細
                           </Link>
                         )}

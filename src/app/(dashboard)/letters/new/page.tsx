@@ -193,12 +193,12 @@ export default function NewLetterPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">手紙を生成する</h1>
+      <h1 className="text-2xl font-bold text-neutral-900">手紙を生成する</h1>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* STEP 1: 宛先選択 */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">STEP 1: 宛先選択</h2>
+        <div className="rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">STEP 1: 宛先選択</h2>
           <div className="mt-4 flex gap-2">
             <input
               type="text"
@@ -206,11 +206,11 @@ export default function NewLetterPage() {
               value={contactSearch}
               onChange={(e) => setContactSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && searchContacts()}
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+              className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
             />
             <button
               onClick={searchContacts}
-              className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+              className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
             >
               検索
             </button>
@@ -222,25 +222,25 @@ export default function NewLetterPage() {
                 <button
                   key={c.id}
                   onClick={() => setSelectedContact(c)}
-                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm hover:bg-blue-50"
+                  className="block w-full rounded-lg border border-neutral-200 px-3 py-2 text-left text-sm hover:bg-neutral-50"
                 >
                   <span className="font-medium">{c.full_name}</span>
-                  <span className="ml-2 text-gray-500">{c.company_name} / {c.title}</span>
+                  <span className="ml-2 text-neutral-500">{c.company_name} / {c.title}</span>
                 </button>
               ))}
             </div>
           )}
 
           {selectedContact && (
-            <div className="mt-4 space-y-2 rounded-lg bg-blue-50 p-4">
-              <p className="font-medium text-gray-900">{selectedContact.full_name}</p>
-              <p className="text-sm text-gray-600">
+            <div className="mt-4 space-y-2 rounded-lg bg-neutral-50 p-4">
+              <p className="font-medium text-neutral-900">{selectedContact.full_name}</p>
+              <p className="text-sm text-neutral-600">
                 {selectedContact.company_name} / {selectedContact.title}
               </p>
-              <p className="text-sm text-gray-600">{selectedContact.address}</p>
+              <p className="text-sm text-neutral-600">{selectedContact.address}</p>
               <button
                 onClick={() => setSelectedContact(null)}
-                className="text-sm text-blue-600 hover:underline"
+                className="text-sm text-neutral-900 hover:underline"
               >
                 変更する
               </button>
@@ -249,11 +249,11 @@ export default function NewLetterPage() {
 
           {selectedContact && (
             <div className="mt-4">
-              <h3 className="text-sm font-medium text-gray-700">企業の直近情報</h3>
+              <h3 className="text-sm font-medium text-neutral-700">企業の直近情報</h3>
               <button
                 onClick={collectInfo}
                 disabled={collectingInfo}
-                className="mt-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                className="mt-2 rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-50"
               >
                 {collectingInfo ? '収集中...' : 'AI情報収集'}
               </button>
@@ -262,7 +262,7 @@ export default function NewLetterPage() {
                   value={collectedContext}
                   onChange={(e) => setCollectedContext(e.target.value)}
                   rows={4}
-                  className="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                  className="mt-2 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
                 />
               )}
             </div>
@@ -270,15 +270,15 @@ export default function NewLetterPage() {
         </div>
 
         {/* STEP 2: 設計 */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">STEP 2: 設計</h2>
+        <div className="rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">STEP 2: 設計</h2>
           <div className="mt-4 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">クライアント</label>
+              <label className="block text-sm font-medium text-neutral-700">クライアント</label>
               <select
                 value={selectedClient}
                 onChange={(e) => setSelectedClient(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -289,11 +289,11 @@ export default function NewLetterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Why Youの切り口</label>
+              <label className="block text-sm font-medium text-neutral-700">Why Youの切り口</label>
               <select
                 value={whyYouAngle}
                 onChange={(e) => setWhyYouAngle(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {WHY_YOU_ANGLES.map((a) => (
                   <option key={a} value={a}>{a}</option>
@@ -302,11 +302,11 @@ export default function NewLetterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">送付トリガー</label>
+              <label className="block text-sm font-medium text-neutral-700">送付トリガー</label>
               <select
                 value={sendTrigger}
                 onChange={(e) => setSendTrigger(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {SEND_TRIGGERS.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -315,18 +315,18 @@ export default function NewLetterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">使用ケーススタディ</label>
+              <label className="block text-sm font-medium text-neutral-700">使用ケーススタディ</label>
               <div className="mt-2 space-y-2">
                 {caseStudies.length === 0 ? (
-                  <p className="text-sm text-gray-500">ケーススタディがありません</p>
+                  <p className="text-sm text-neutral-500">ケーススタディがありません</p>
                 ) : (
                   caseStudies.map((cs) => (
                     <label
                       key={cs.id}
                       className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
                         selectedCaseStudy === cs.id
-                          ? 'border-blue-300 bg-blue-50'
-                          : 'border-gray-200 hover:bg-gray-50'
+                          ? 'border-neutral-300 bg-neutral-50'
+                          : 'border-neutral-200 hover:bg-neutral-50'
                       }`}
                     >
                       <input
@@ -337,9 +337,9 @@ export default function NewLetterPage() {
                         className="mt-1"
                       />
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{cs.company_name}</p>
-                        <p className="text-xs text-gray-500">{cs.challenge_tags.join(', ')}</p>
-                        <p className="text-xs text-gray-500">{cs.result_summary}</p>
+                        <p className="text-sm font-medium text-neutral-900">{cs.company_name}</p>
+                        <p className="text-xs text-neutral-500">{cs.challenge_tags.join(', ')}</p>
+                        <p className="text-xs text-neutral-500">{cs.result_summary}</p>
                       </div>
                     </label>
                   ))
@@ -351,13 +351,13 @@ export default function NewLetterPage() {
       </div>
 
       {/* STEP 3: 生成・確認 */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">STEP 3: 生成・確認</h2>
+      <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
+        <h2 className="text-lg font-semibold text-neutral-900">STEP 3: 生成・確認</h2>
 
         <button
           onClick={generateLetter}
           disabled={generating || !selectedContact || !selectedClient}
-          className="mt-4 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+          className="mt-4 rounded-lg bg-neutral-900 px-6 py-3 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
         >
           {generating ? '生成中...' : '手紙を生成する'}
         </button>
@@ -368,20 +368,20 @@ export default function NewLetterPage() {
               value={generatedLetter}
               onChange={(e) => setGeneratedLetter(e.target.value)}
               rows={20}
-              className="block w-full rounded-lg border border-gray-300 px-4 py-3 font-serif text-sm leading-relaxed text-gray-900"
+              className="block w-full rounded-lg border border-neutral-300 px-4 py-3 font-serif text-sm leading-relaxed text-neutral-900"
             />
             <div className="mt-4 flex items-center gap-4">
-              <p className="text-sm text-gray-500">文字数: {generatedLetter.length}文字</p>
+              <p className="text-sm text-neutral-500">文字数: {generatedLetter.length}文字</p>
               <button
                 onClick={saveLetter}
                 disabled={saved}
-                className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-50"
               >
                 {saved ? '保存済み' : '保存する'}
               </button>
               <button
                 onClick={downloadDocx}
-                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
               >
                 docxで出力
               </button>

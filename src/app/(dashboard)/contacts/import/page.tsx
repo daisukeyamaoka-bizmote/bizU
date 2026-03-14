@@ -146,15 +146,15 @@ export default function CSVImportPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">CSVインポート</h1>
+      <h1 className="text-2xl font-bold text-neutral-900">CSVインポート</h1>
 
       {/* Step 1: Upload */}
       {step === 1 && (
         <div className="mt-6">
-          <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white p-12">
+          <div className="flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-white p-12">
             <div className="text-center">
-              <p className="text-sm text-gray-600">CSVファイルをアップロード</p>
-              <label className="mt-4 inline-flex cursor-pointer items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+              <p className="text-sm text-neutral-600">CSVファイルをアップロード</p>
+              <label className="mt-4 inline-flex cursor-pointer items-center rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800">
                 ファイルを選択
                 <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
               </label>
@@ -166,17 +166,17 @@ export default function CSVImportPage() {
       {/* Step 2: Mapping */}
       {step === 2 && (
         <div className="mt-6 space-y-6">
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900">列のマッピング確認</h2>
+          <div className="rounded-lg border border-neutral-200 bg-white p-6">
+            <h2 className="text-lg font-semibold text-neutral-900">列のマッピング確認</h2>
             <div className="mt-4 space-y-3">
               {headers.map((header) => (
                 <div key={header} className="flex items-center gap-4">
-                  <span className="w-40 text-sm text-gray-700">{header}</span>
-                  <span className="text-gray-400">→</span>
+                  <span className="w-40 text-sm text-neutral-700">{header}</span>
+                  <span className="text-neutral-400">→</span>
                   <select
                     value={mapping[header] ?? 'skip'}
                     onChange={(e) => setMapping(prev => ({ ...prev, [header]: e.target.value as MappingField }))}
-                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                    className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
                   >
                     {FIELD_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -187,12 +187,12 @@ export default function CSVImportPage() {
             </div>
           </div>
 
-          <p className="text-sm text-gray-600">データ件数: {csvData.length}件</p>
+          <p className="text-sm text-neutral-600">データ件数: {csvData.length}件</p>
 
           <button
             onClick={handleImport}
             disabled={loading}
-            className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-neutral-900 px-6 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
           >
             {loading ? 'インポート中...' : 'インポート実行'}
           </button>
@@ -201,11 +201,11 @@ export default function CSVImportPage() {
 
       {/* Step 3: Result */}
       {step === 3 && importResult && (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">インポート結果</h2>
+        <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">インポート結果</h2>
           <div className="mt-4 space-y-2 text-sm">
-            <p className="text-green-700">新規追加: {importResult.added}件</p>
-            <p className="text-gray-600">スキップ（重複等）: {importResult.skipped}件</p>
+            <p className="text-neutral-700">新規追加: {importResult.added}件</p>
+            <p className="text-neutral-600">スキップ（重複等）: {importResult.skipped}件</p>
           </div>
         </div>
       )}

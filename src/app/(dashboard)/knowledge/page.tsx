@@ -41,19 +41,19 @@ type SourceItem = {
   progress?: number
 }
 
-const STAGE_LABELS = {
-  uploading: 'アップロード中...',
-  analyzing: 'AI分析中...',
-  extracting: 'ナレッジ抽出中...',
+const STAGE_LABELS: Record<string, string> = {
+  uploading: 'アップロード中',
+  analyzing: 'AI分析中',
+  extracting: 'ナレッジ抽出中',
 }
 
 const CATEGORY_LABELS: Record<string, { text: string; color: string }> = {
-  product_info: { text: 'プロダクト情報', color: 'bg-purple-100 text-purple-700' },
-  case_study: { text: '導入事例', color: 'bg-blue-100 text-blue-700' },
-  sales_material: { text: '営業資料', color: 'bg-green-100 text-green-700' },
-  competitor: { text: '競合情報', color: 'bg-red-100 text-red-700' },
-  market: { text: '市場動向', color: 'bg-yellow-100 text-yellow-700' },
-  other: { text: 'その他', color: 'bg-gray-100 text-gray-600' },
+  product_info: { text: 'プロダクト情報', color: 'bg-neutral-900 text-white' },
+  case_study: { text: '導入事例', color: 'bg-neutral-700 text-white' },
+  sales_material: { text: '営業資料', color: 'bg-neutral-200 text-neutral-800' },
+  competitor: { text: '競合情報', color: 'bg-neutral-200 text-neutral-800' },
+  market: { text: '市場動向', color: 'bg-neutral-200 text-neutral-800' },
+  other: { text: 'その他', color: 'bg-neutral-100 text-neutral-500' },
 }
 
 export default function KnowledgePage() {
@@ -360,35 +360,35 @@ export default function KnowledgePage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">ナレッジ管理</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">ナレッジ管理</h1>
         <button
           onClick={() => setShowUpload(!showUpload)}
-          className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
         >
           + ナレッジを追加
         </button>
       </div>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-neutral-500">
         プロダクトごとの営業資料・事例・競合情報を蓄積し、手紙生成に活用します
       </p>
 
       {/* アップロードパネル */}
       {showUpload && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">ナレッジを一括追加</h2>
-          <p className="mt-1 text-sm text-gray-500">
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">ナレッジを一括追加</h2>
+          <p className="mt-1 text-sm text-neutral-500">
             URL・PDF・テキストファイルを投入 → AIが営業に使える情報を自動抽出・分類します
           </p>
-          <div className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
-            複数ファイルを一括処理できます。PDF1件あたり30秒〜1分程度かかります。件数が多い場合はAPI制限回避のため自動的に間隔を空けて処理します。
-          </div>
+          <p className="mt-2 text-xs text-neutral-400">
+            複数ファイルを一括処理できます。PDF1件あたり30秒〜1分程度かかります。件数が多い場合は自動的に間隔を空けて処理します。
+          </p>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700">クライアント / プロダクト</label>
+            <label className="block text-sm font-medium text-neutral-700">クライアント / プロダクト</label>
             <select
               value={uploadClientId}
               onChange={(e) => setUploadClientId(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 sm:w-64"
+              className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 sm:w-64"
             >
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
@@ -398,26 +398,26 @@ export default function KnowledgePage() {
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">URLを追加（複数可）</label>
+              <label className="block text-sm font-medium text-neutral-700">URLを追加（複数可）</label>
               <textarea
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 placeholder={"製品ページURL\n事例ページURL\n競合の記事URL\n..."}
                 rows={4}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
               <button
                 onClick={addUrls}
                 disabled={!urlInput.trim()}
-                className="mt-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                className="mt-2 rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-50"
               >
                 URLを追加
               </button>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">ファイルを追加（複数選択可）</label>
-              <p className="mt-1 text-xs text-gray-400">営業資料PDF、事例資料、提案書など</p>
-              <label className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <label className="block text-sm font-medium text-neutral-700">ファイルを追加（複数選択可）</label>
+              <p className="mt-1 text-xs text-neutral-400">営業資料PDF、事例資料、提案書など</p>
+              <label className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 ファイルを選択
                 <input
                   type="file"
@@ -434,41 +434,49 @@ export default function KnowledgePage() {
           {sources.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-neutral-700">
                   ソース: {sources.length}件
-                  {doneCount > 0 && <span className="text-green-600"> ({doneCount}件完了)</span>}
+                  {doneCount > 0 && <span className="text-neutral-900 font-medium"> ({doneCount}件完了)</span>}
                 </p>
-                <button onClick={() => setSources([])} className="text-sm text-gray-400 hover:text-gray-600">
+                <button onClick={() => setSources([])} className="text-sm text-neutral-400 hover:text-neutral-600">
                   クリア
                 </button>
               </div>
               <div className="mt-2 max-h-60 space-y-2 overflow-y-auto">
                 {sources.map((s) => (
-                  <div key={s.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                  <div key={s.id} className="rounded-lg bg-neutral-50 px-3 py-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs">
-                        {s.status === 'pending' && '⏳'}
-                        {s.status === 'extracting' && '🔄'}
-                        {s.status === 'done' && '✅'}
-                        {s.status === 'error' && '❌'}
+                      <span className="flex h-5 w-5 items-center justify-center">
+                        {s.status === 'pending' && <span className="h-2 w-2 rounded-full bg-neutral-300" />}
+                        {s.status === 'extracting' && <span className="h-2 w-2 rounded-full bg-neutral-900 progress-active" />}
+                        {s.status === 'done' && (
+                          <svg className="h-4 w-4 text-neutral-900" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        {s.status === 'error' && (
+                          <svg className="h-4 w-4 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        )}
                       </span>
-                      <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
-                      {s.status === 'done' && <span className="text-xs text-green-600">{s.results.length}件抽出</span>}
+                      <span className="flex-1 truncate text-sm text-neutral-700">{s.name}</span>
+                      {s.status === 'done' && <span className="text-xs text-neutral-900 font-medium">{s.results.length}件抽出</span>}
                       {s.status === 'error' && <span className="max-w-sm text-xs text-red-600 break-all" title={s.error}>{s.error}</span>}
                       {s.status === 'extracting' && s.stage && (
-                        <span className="text-xs text-blue-600">{STAGE_LABELS[s.stage]}</span>
+                        <span className="text-xs text-neutral-600">{STAGE_LABELS[s.stage]}</span>
                       )}
-                      <button onClick={() => removeSource(s.id)} className="text-xs text-gray-400 hover:text-red-500">×</button>
+                      <button onClick={() => removeSource(s.id)} className="text-xs text-neutral-400 hover:text-red-500">×</button>
                     </div>
                     {s.status === 'extracting' && s.progress !== undefined && (
                       <div className="mt-2">
-                        <div className="flex items-center justify-between text-xs text-gray-500">
+                        <div className="flex items-center justify-between text-xs text-neutral-500">
                           <span>{s.stage && STAGE_LABELS[s.stage]}</span>
                           <span>{s.progress}%</span>
                         </div>
-                        <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                        <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
                           <div
-                            className="h-full rounded-full bg-green-500 transition-all duration-300 ease-out"
+                            className="h-full rounded-full bg-neutral-900 transition-all duration-300 ease-out"
                             style={{ width: `${s.progress}%` }}
                           />
                         </div>
@@ -476,8 +484,8 @@ export default function KnowledgePage() {
                     )}
                     {s.status === 'done' && (
                       <div className="mt-1">
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                          <div className="h-full w-full rounded-full bg-green-500" />
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-200">
+                          <div className="h-full w-full rounded-full bg-neutral-900" />
                         </div>
                       </div>
                     )}
@@ -488,14 +496,14 @@ export default function KnowledgePage() {
                 <button
                   onClick={extractAll}
                   disabled={extracting || pendingCount === 0}
-                  className="rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                  className="rounded-md bg-neutral-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
                 >
                   {extracting
                     ? `抽出中... (${doneCount}/${sources.length})`
                     : `一括抽出する (${pendingCount}件)`}
                 </button>
                 {extracting && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-neutral-500">
                     {sources.length > 1
                       ? `${sources.length}件を順番に処理中... 全体で${Math.ceil(sources.length * 1.5)}分ほどかかる場合があります`
                       : 'AI処理のため30秒〜1分ほどかかります'}
@@ -507,12 +515,12 @@ export default function KnowledgePage() {
 
           {/* 抽出結果 */}
           {allResults.length > 0 && (
-            <div className="mt-6 border-t border-gray-200 pt-4">
+            <div className="mt-6 border-t border-neutral-200 pt-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900">抽出結果: {allResults.length}件</h3>
+                <h3 className="text-sm font-semibold text-neutral-900">抽出結果: {allResults.length}件</h3>
                 <button
                   onClick={saveAllResults}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
                 >
                   すべて登録する
                 </button>
@@ -521,18 +529,18 @@ export default function KnowledgePage() {
                 {allResults.map((item, i) => {
                   const cat = CATEGORY_LABELS[item.category] ?? CATEGORY_LABELS.other
                   return (
-                    <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div key={i} className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
                       <div className="flex items-start gap-3">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cat.color}`}>
                           {cat.text}
                         </span>
                         <div className="flex-1">
-                          <p className="font-medium text-gray-900">{item.title}</p>
-                          <p className="mt-1 text-sm text-gray-600 line-clamp-3">{item.content}</p>
+                          <p className="font-medium text-neutral-900">{item.title}</p>
+                          <p className="mt-1 text-sm text-neutral-600 line-clamp-3">{item.content}</p>
                           {item.tags && item.tags.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1">
                               {item.tags.map(tag => (
-                                <span key={tag} className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">{tag}</span>
+                                <span key={tag} className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-600">{tag}</span>
                               ))}
                             </div>
                           )}
@@ -552,7 +560,7 @@ export default function KnowledgePage() {
         <select
           value={selectedClientId}
           onChange={(e) => setSelectedClientId(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
         >
           <option value="all">全クライアント</option>
           {clients.map(c => (
@@ -562,7 +570,7 @@ export default function KnowledgePage() {
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
         >
           <option value="all">全カテゴリ</option>
           {Object.entries(CATEGORY_LABELS).map(([key, val]) => (
@@ -574,11 +582,11 @@ export default function KnowledgePage() {
       {/* ナレッジ一覧 */}
       <div className="mt-4 space-y-3">
         {loading ? (
-          <p className="text-sm text-gray-500">読み込み中...</p>
+          <p className="text-sm text-neutral-500">読み込み中...</p>
         ) : items.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
-            <p className="text-gray-500">ナレッジがありません</p>
-            <p className="mt-1 text-sm text-gray-400">「+ ナレッジを追加」からURL・ファイルを投入してください</p>
+          <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center shadow-sm">
+            <p className="text-neutral-500">ナレッジがありません</p>
+            <p className="mt-1 text-sm text-neutral-400">「+ ナレッジを追加」からURL・ファイルを投入してください</p>
           </div>
         ) : (
           items.map((item) => {
@@ -587,7 +595,7 @@ export default function KnowledgePage() {
             return (
               <div
                 key={item.id}
-                className="rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+                className="rounded-lg border border-neutral-200 bg-white transition-all hover:border-neutral-300"
               >
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : item.id)}
@@ -597,24 +605,24 @@ export default function KnowledgePage() {
                     {cat.text}
                   </span>
                   <div className="flex-1">
-                    <p className="font-medium text-gray-900">{item.title}</p>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-gray-400">
+                    <p className="font-medium text-neutral-900">{item.title}</p>
+                    <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
                       <span>{item.client_name}</span>
-                      {item.source_name && <span>{item.source_type === 'url' ? '🔗' : '📄'} {item.source_name}</span>}
+                      {item.source_name && <span>{item.source_name}</span>}
                     </div>
                     {!isExpanded && (
-                      <p className="mt-1 text-sm text-gray-500 line-clamp-2">{item.content}</p>
+                      <p className="mt-1 text-sm text-neutral-500 line-clamp-2">{item.content}</p>
                     )}
                   </div>
-                  <span className="text-gray-400">{isExpanded ? '▲' : '▼'}</span>
+                  <span className="text-neutral-400">{isExpanded ? '▲' : '▼'}</span>
                 </button>
                 {isExpanded && (
-                  <div className="border-t border-gray-100 px-4 pb-4 pt-3">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{item.content}</p>
+                  <div className="border-t border-neutral-100 px-4 pb-4 pt-3">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">{item.content}</p>
                     {item.tags && item.tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1">
                         {item.tags.map(tag => (
-                          <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{tag}</span>
+                          <span key={tag} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">{tag}</span>
                         ))}
                       </div>
                     )}

@@ -59,55 +59,55 @@ export default function ReactionsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">反応記録</h1>
+      <h1 className="text-2xl font-bold text-neutral-900">反応記録</h1>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="min-w-full divide-y divide-neutral-200">
+          <thead className="bg-neutral-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">宛先</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">反応種別</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">反応日</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">日数</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">次のアクション</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">メモ</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">宛先</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">反応種別</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">反応日</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">日数</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">次のアクション</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">メモ</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">
                   読み込み中...
                 </td>
               </tr>
             ) : reactions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">
                   反応記録がありません
                 </td>
               </tr>
             ) : (
               reactions.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50">
+                <tr key={r.id} className="hover:bg-neutral-50">
                   <td className="px-4 py-3 text-sm">
-                    <Link href={`/letters/${r.letter_id}`} className="font-medium text-blue-600 hover:underline">
+                    <Link href={`/letters/${r.letter_id}`} className="font-medium text-neutral-900 hover:underline">
                       {r.contact_name}
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                    <span className="rounded-full bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-900">
                       {r.reaction_type}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{r.reacted_at}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
+                  <td className="px-4 py-3 text-sm text-neutral-600">{r.reacted_at}</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600">
                     {r.days_to_react !== null ? `${r.days_to_react}日` : '-'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
+                  <td className="px-4 py-3 text-sm text-neutral-600">
                     {r.next_action ?? '-'}
                     {r.next_action_date ? ` (${r.next_action_date})` : ''}
                   </td>
-                  <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-600">{r.memo ?? '-'}</td>
+                  <td className="max-w-xs truncate px-4 py-3 text-sm text-neutral-600">{r.memo ?? '-'}</td>
                 </tr>
               ))
             )}

@@ -89,43 +89,43 @@ export default function ProjectsPage() {
   }
 
   const statusLabel: Record<string, { text: string; color: string }> = {
-    draft: { text: '下書き', color: 'bg-gray-100 text-gray-700' },
-    active: { text: '進行中', color: 'bg-blue-100 text-blue-700' },
-    completed: { text: '完了', color: 'bg-green-100 text-green-700' },
-    archived: { text: 'アーカイブ', color: 'bg-gray-100 text-gray-500' },
+    draft: { text: '下書き', color: 'bg-neutral-100 text-neutral-700' },
+    active: { text: '進行中', color: 'bg-neutral-100 text-neutral-700' },
+    completed: { text: '完了', color: 'bg-neutral-100 text-neutral-700' },
+    archived: { text: 'アーカイブ', color: 'bg-neutral-100 text-neutral-500' },
   }
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">プロジェクト管理</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">プロジェクト管理</h1>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
         >
           + 新規プロジェクト
         </button>
       </div>
 
       {showForm && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">新規プロジェクト作成</h2>
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <h2 className="text-lg font-semibold text-neutral-900">新規プロジェクト作成</h2>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700">プロジェクト名</label>
+              <label className="block text-sm font-medium text-neutral-700">プロジェクト名</label>
               <input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="2026年3月 製造業向け施策"
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">クライアント</label>
+              <label className="block text-sm font-medium text-neutral-700">クライアント</label>
               <select
                 value={formClientId}
                 onChange={(e) => setFormClientId(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -133,11 +133,11 @@ export default function ProjectsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Why Youの切り口</label>
+              <label className="block text-sm font-medium text-neutral-700">Why Youの切り口</label>
               <select
                 value={formWhyYou}
                 onChange={(e) => setFormWhyYou(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {WHY_YOU_ANGLES.map((a) => (
                   <option key={a} value={a}>{a}</option>
@@ -145,11 +145,11 @@ export default function ProjectsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">送付トリガー</label>
+              <label className="block text-sm font-medium text-neutral-700">送付トリガー</label>
               <select
                 value={formTrigger}
                 onChange={(e) => setFormTrigger(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               >
                 {SEND_TRIGGERS.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -157,12 +157,12 @@ export default function ProjectsPage() {
               </select>
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">説明（任意）</label>
+              <label className="block text-sm font-medium text-neutral-700">説明（任意）</label>
               <textarea
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
                 rows={2}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
             </div>
           </div>
@@ -170,11 +170,11 @@ export default function ProjectsPage() {
             <button
               onClick={handleCreate}
               disabled={saving || !formName}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
             >
               {saving ? '作成中...' : '作成する'}
             </button>
-            <button onClick={() => setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700">
+            <button onClick={() => setShowForm(false)} className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700">
               キャンセル
             </button>
           </div>
@@ -184,9 +184,9 @@ export default function ProjectsPage() {
       {/* プロジェクト一覧 */}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading ? (
-          <p className="text-sm text-gray-500">読み込み中...</p>
+          <p className="text-sm text-neutral-500">読み込み中...</p>
         ) : projects.length === 0 ? (
-          <p className="text-sm text-gray-500">プロジェクトがありません</p>
+          <p className="text-sm text-neutral-500">プロジェクトがありません</p>
         ) : (
           projects.map((p) => {
             const s = statusLabel[p.status] ?? statusLabel.draft
@@ -195,34 +195,34 @@ export default function ProjectsPage() {
               <Link
                 key={p.id}
                 href={`/projects/${p.id}`}
-                className="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
+                className="block rounded-lg border border-neutral-200 bg-white p-5 transition-shadow hover:shadow"
               >
                 <div className="flex items-start justify-between">
-                  <h3 className="font-semibold text-gray-900">{p.name}</h3>
+                  <h3 className="font-semibold text-neutral-900">{p.name}</h3>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
                     {s.text}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-gray-500">{p.client_name}</p>
+                <p className="mt-1 text-sm text-neutral-500">{p.client_name}</p>
                 {p.why_you_angle && (
-                  <p className="mt-1 text-xs text-gray-400">切り口: {p.why_you_angle}</p>
+                  <p className="mt-1 text-xs text-neutral-400">切り口: {p.why_you_angle}</p>
                 )}
 
                 {/* 進捗バー */}
                 <div className="mt-4">
-                  <div className="flex justify-between text-xs text-gray-500">
+                  <div className="flex justify-between text-xs text-neutral-500">
                     <span>送付進捗</span>
                     <span>{p.sent_count} / {p.target_count}件 ({progress}%)</span>
                   </div>
-                  <div className="mt-1 h-2 w-full rounded-full bg-gray-100">
+                  <div className="mt-1 h-2 w-full rounded-full bg-neutral-100">
                     <div
-                      className="h-2 rounded-full bg-blue-600 transition-all"
+                      className="h-2 rounded-full bg-neutral-900 transition-all"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
                 </div>
 
-                <div className="mt-3 flex gap-4 text-xs text-gray-500">
+                <div className="mt-3 flex gap-4 text-xs text-neutral-500">
                   <span>対象: {p.target_count}件</span>
                   <span>送付: {p.sent_count}件</span>
                   <span>反応: {p.reacted_count}件</span>

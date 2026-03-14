@@ -32,7 +32,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
+      <h1 className="text-2xl font-bold text-neutral-900">ダッシュボード</h1>
 
       {/* KPIカード */}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -44,7 +44,7 @@ export default async function DashboardPage() {
 
       {/* 要アクション */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900">要アクション</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">要アクション</h2>
         <div className="mt-4 space-y-3">
           <AlertCard text="送付から14日以上経過・反応記録なしの手紙を確認してください" />
           <AlertCard text="情報取得から6ヶ月超のコンタクトを更新してください" />
@@ -56,7 +56,7 @@ export default async function DashboardPage() {
       <div className="mt-8">
         <Link
           href="/letters/new"
-          className="inline-flex items-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+          className="inline-flex items-center rounded-lg bg-neutral-900 px-6 py-3 text-sm font-medium text-white hover:bg-neutral-800"
         >
           + 手紙を生成する
         </Link>
@@ -67,16 +67,16 @@ export default async function DashboardPage() {
 
 function KPICard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <p className="text-sm font-medium text-gray-500">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+    <div className="rounded-lg border border-neutral-200 bg-white p-6">
+      <p className="text-sm font-medium text-neutral-500">{label}</p>
+      <p className="mt-2 text-3xl font-bold text-neutral-900">{value}</p>
     </div>
   )
 }
 
 function AlertCard({ text }: { text: string }) {
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
       {text}
     </div>
   )

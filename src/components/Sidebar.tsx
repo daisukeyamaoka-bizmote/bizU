@@ -4,16 +4,27 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import {
+  SquaresFour,
+  FolderSimple,
+  BookOpen,
+  Users,
+  EnvelopeSimple,
+  PencilSimple,
+  ChartBar,
+  TrendUp,
+  SignOut,
+} from '@phosphor-icons/react'
 
 const navItems = [
-  { href: '/', label: 'ダッシュボード', icon: '📊' },
-  { href: '/projects', label: 'プロジェクト', icon: '📋' },
-  { href: '/knowledge', label: 'ナレッジ管理', icon: '🧠' },
-  { href: '/contacts', label: 'コンタクト管理', icon: '👤' },
-  { href: '/letters', label: '手紙一覧', icon: '✉️' },
-  { href: '/letters/new', label: '手紙を生成', icon: '✍️' },
-  { href: '/cases', label: 'ケーススタディ', icon: '📁' },
-  { href: '/reactions', label: '反応記録', icon: '📈' },
+  { href: '/', label: 'ダッシュボード', icon: SquaresFour },
+  { href: '/projects', label: 'プロジェクト', icon: FolderSimple },
+  { href: '/knowledge', label: 'ナレッジ管理', icon: BookOpen },
+  { href: '/contacts', label: 'コンタクト管理', icon: Users },
+  { href: '/letters', label: '手紙一覧', icon: EnvelopeSimple },
+  { href: '/letters/new', label: '手紙を生成', icon: PencilSimple },
+  { href: '/cases', label: 'ケーススタディ', icon: ChartBar },
+  { href: '/reactions', label: '反応記録', icon: TrendUp },
 ]
 
 export default function Sidebar() {
@@ -27,36 +38,42 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-white">
-      <div className="flex h-16 items-center border-b border-gray-200 px-6">
-        <Link href="/" className="text-xl font-bold text-gray-900">
+    <aside className="flex h-screen w-52 flex-col border-r border-neutral-200 bg-white">
+      <div className="flex h-14 items-center px-5">
+        <Link href="/" className="text-[17px] font-semibold tracking-tight text-black">
           bizU
         </Link>
       </div>
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-0.5 px-2 py-3">
         {navItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+          const IconComponent = item.icon
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] font-medium transition-all duration-150 ${
                 isActive
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  ? 'bg-neutral-900 text-white'
+                  : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'
               }`}
             >
-              <span>{item.icon}</span>
+              <IconComponent
+                size={16}
+                weight={isActive ? 'fill' : 'regular'}
+                className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-neutral-400 group-hover:text-neutral-600'}`}
+              />
               {item.label}
             </Link>
           )
         })}
       </nav>
-      <div className="border-t border-gray-200 p-3">
+      <div className="border-t border-neutral-200 px-2 py-2">
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] font-medium text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
         >
+          <SignOut size={16} className="flex-shrink-0" />
           ログアウト
         </button>
       </div>
