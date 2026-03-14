@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 type KnowledgeItem = {
@@ -37,6 +37,14 @@ type SourceItem = {
   results: ExtractedItem[]
   sourceType?: string
   error?: string
+  stage?: 'uploading' | 'analyzing' | 'extracting'
+  progress?: number
+}
+
+const STAGE_LABELS = {
+  uploading: 'アップロード中...',
+  analyzing: 'AI分析中...',
+  extracting: 'ナレッジ抽出中...',
 }
 
 const CATEGORY_LABELS: Record<string, { text: string; color: string }> = {
@@ -153,6 +161,30 @@ export default function KnowledgePage() {
     setSources(prev => prev.filter(s => s.id !== id))
   }
 
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const startProgressAnimation = useCallback((index: number, stage: 'uploading' | 'analyzing' | 'extracting', startPct: number, endPct: number) => {
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+    const duration = stage === 'analyzing' ? 20000 : 3000
+    const stepMs = 200
+    const steps = duration / stepMs
+    const increment = (endPct - startPct) / steps
+    let current = startPct
+
+    progressIntervalRef.current = setInterval(() => {
+      current = Math.min(current + increment, endPct)
+      setSources(prev => {
+        const copy = [...prev]
+        if (copy[index]) copy[index] = { ...copy[index], progress: Math.round(current), stage }
+        return copy
+      })
+      if (current >= endPct && progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
+    }, stepMs)
+  }, [])
+
   async function extractAll() {
     setExtracting(true)
     const updated = [...sources]
@@ -162,8 +194,10 @@ export default function KnowledgePage() {
       const source = updated[i]
       if (source.status === 'done') continue
 
-      updated[i] = { ...source, status: 'extracting' }
+      // Stage 1: Uploading (0-15%)
+      updated[i] = { ...source, status: 'extracting', stage: 'uploading', progress: 0 }
       setSources([...updated])
+      startProgressAnimation(i, 'uploading', 0, 15)
 
       try {
         let res: Response
@@ -176,33 +210,51 @@ export default function KnowledgePage() {
         } else {
           const formData = new FormData()
           formData.append('file', source.file!)
+
+          // Stage 2: AI Analyzing (15-85%)
+          updated[i] = { ...updated[i], stage: 'analyzing', progress: 15 }
+          setSources([...updated])
+          startProgressAnimation(i, 'analyzing', 15, 85)
+
           res = await fetch('/api/extract-knowledge', {
             method: 'POST',
             body: formData,
           })
         }
 
+        // Stage 3: Extracting results (85-100%)
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+        updated[i] = { ...updated[i], stage: 'extracting', progress: 85 }
+        setSources([...updated])
+        startProgressAnimation(i, 'extracting', 85, 98)
+
         if (!res.ok) {
+          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
           const text = await res.text()
-          updated[i] = { ...updated[i], status: 'error', error: `API ${res.status}: ${text.slice(0, 200)}` }
+          updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: `API ${res.status}: ${text.slice(0, 200)}` }
           setSources([...updated])
           continue
         }
         const data = await res.json()
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+
         if (data.error) {
-          updated[i] = { ...updated[i], status: 'error', error: data.error }
+          updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: data.error }
         } else {
           updated[i] = {
             ...updated[i],
             status: 'done',
+            progress: 100,
+            stage: undefined,
             results: data.items ?? [],
             sourceType: data.source_type,
           }
           sourceInfos.push({ type: data.source_type, name: data.source_name })
         }
       } catch (err) {
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
         const msg = err instanceof Error ? err.message : String(err)
-        updated[i] = { ...updated[i], status: 'error', error: `通信エラー: ${msg}` }
+        updated[i] = { ...updated[i], status: 'error', progress: undefined, stage: undefined, error: `通信エラー: ${msg}` }
       }
       setSources([...updated])
     }
@@ -338,29 +390,64 @@ export default function KnowledgePage() {
                   クリア
                 </button>
               </div>
-              <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+              <div className="mt-2 max-h-60 space-y-2 overflow-y-auto">
                 {sources.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
-                    <span className="text-xs">
-                      {s.status === 'pending' && '⏳'}
-                      {s.status === 'extracting' && '🔄'}
-                      {s.status === 'done' && '✅'}
-                      {s.status === 'error' && '❌'}
-                    </span>
-                    <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
-                    {s.status === 'done' && <span className="text-xs text-green-600">{s.results.length}件</span>}
-                    {s.status === 'error' && <span className="max-w-xs truncate text-xs text-red-600" title={s.error}>{s.error}</span>}
-                    <button onClick={() => removeSource(s.id)} className="text-xs text-gray-400 hover:text-red-500">×</button>
+                  <div key={s.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs">
+                        {s.status === 'pending' && '⏳'}
+                        {s.status === 'extracting' && '🔄'}
+                        {s.status === 'done' && '✅'}
+                        {s.status === 'error' && '❌'}
+                      </span>
+                      <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
+                      {s.status === 'done' && <span className="text-xs text-green-600">{s.results.length}件抽出</span>}
+                      {s.status === 'error' && <span className="max-w-xs truncate text-xs text-red-600" title={s.error}>{s.error}</span>}
+                      {s.status === 'extracting' && s.stage && (
+                        <span className="text-xs text-blue-600">{STAGE_LABELS[s.stage]}</span>
+                      )}
+                      <button onClick={() => removeSource(s.id)} className="text-xs text-gray-400 hover:text-red-500">×</button>
+                    </div>
+                    {s.status === 'extracting' && s.progress !== undefined && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{s.stage && STAGE_LABELS[s.stage]}</span>
+                          <span>{s.progress}%</span>
+                        </div>
+                        <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                          <div
+                            className="h-full rounded-full bg-green-500 transition-all duration-300 ease-out"
+                            style={{ width: `${s.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {s.status === 'done' && (
+                      <div className="mt-1">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                          <div className="h-full w-full rounded-full bg-green-500" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-              <button
-                onClick={extractAll}
-                disabled={extracting || pendingCount === 0}
-                className="mt-3 rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-              >
-                {extracting ? '抽出中...' : `一括抽出する (${pendingCount}件)`}
-              </button>
+              <div className="mt-3 flex items-center gap-4">
+                <button
+                  onClick={extractAll}
+                  disabled={extracting || pendingCount === 0}
+                  className="rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  {extracting
+                    ? `抽出中... (${doneCount}/${sources.length})`
+                    : `一括抽出する (${pendingCount}件)`}
+                </button>
+                {extracting && (
+                  <span className="text-xs text-gray-500">
+                    PDF解析にはAI処理のため30秒〜1分ほどかかります
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
