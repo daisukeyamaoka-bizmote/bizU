@@ -72,6 +72,9 @@ export default function KnowledgePage() {
   const [extracting, setExtracting] = useState(false)
   const [allResults, setAllResults] = useState<ExtractedItem[]>([])
   const [resultSourceInfo, setResultSourceInfo] = useState<{ type: string; name: string }[]>([])
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [savedMessage, setSavedMessage] = useState<string | null>(null)
 
   useEffect(() => {
     loadClients()
@@ -312,16 +315,31 @@ export default function KnowledgePage() {
     setAllResults(results)
     setResultSourceInfo(sourceInfos)
     setExtracting(false)
+
+    // 抽出完了後に自動保存
+    if (results.length > 0) {
+      setSaving(true)
+      setSaveError(null)
+      const savedCount = await saveExtractedItems(results, sourceInfos)
+      setSaving(false)
+      if (savedCount > 0) {
+        setSavedMessage(`${savedCount}件のナレッジを自動保存しました`)
+        setTimeout(() => setSavedMessage(null), 5000)
+        loadItems()
+      }
+    }
   }
 
-  async function saveAllResults() {
+  async function saveExtractedItems(items: ExtractedItem[], sourceInfos: { type: string; name: string }[]) {
     const supabase = createClient()
-    for (let i = 0; i < allResults.length; i++) {
-      const item = allResults[i]
-      const sourceInfo = resultSourceInfo[0] // Use first source for now
+    let savedCount = 0
+    const errors: string[] = []
 
-      // Save as knowledge item
-      const { data: ki } = await supabase.from('knowledge_items').insert({
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      const sourceInfo = sourceInfos[i] ?? sourceInfos[0]
+
+      const { data: ki, error: kiError } = await supabase.from('knowledge_items').insert({
         client_id: uploadClientId,
         category: item.category,
         title: item.title,
@@ -331,7 +349,13 @@ export default function KnowledgePage() {
         tags: item.tags,
       }).select('id').single()
 
-      // If it's a case study, also create a case_studies record
+      if (kiError) {
+        errors.push(`「${item.title}」の保存に失敗: ${kiError.message}`)
+        continue
+      }
+
+      savedCount++
+
       if (item.category === 'case_study' && item.case_study && ki) {
         const { data: cs } = await supabase.from('case_studies').insert({
           client_id: uploadClientId,
@@ -348,10 +372,25 @@ export default function KnowledgePage() {
         }
       }
     }
-    setAllResults([])
-    setSources([])
-    setShowUpload(false)
-    loadItems()
+
+    if (errors.length > 0) {
+      setSaveError(errors.join('\n'))
+    }
+
+    return savedCount
+  }
+
+  async function saveAllResults() {
+    setSaving(true)
+    setSaveError(null)
+    const savedCount = await saveExtractedItems(allResults, resultSourceInfo)
+    setSaving(false)
+    if (savedCount > 0) {
+      setAllResults([])
+      setSources([])
+      setShowUpload(false)
+      loadItems()
+    }
   }
 
   const doneCount = sources.filter(s => s.status === 'done').length
@@ -513,17 +552,38 @@ export default function KnowledgePage() {
             </div>
           )}
 
+          {/* 保存状態メッセージ */}
+          {saving && (
+            <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+              <p className="text-sm text-neutral-600">データベースに保存中...</p>
+            </div>
+          )}
+          {savedMessage && (
+            <div className="mt-4 rounded-lg border border-neutral-900 bg-neutral-900 p-3">
+              <p className="text-sm text-white font-medium">{savedMessage}</p>
+            </div>
+          )}
+          {saveError && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-sm text-red-700 font-medium">保存エラー</p>
+              <p className="mt-1 text-xs text-red-600 whitespace-pre-wrap">{saveError}</p>
+            </div>
+          )}
+
           {/* 抽出結果 */}
           {allResults.length > 0 && (
             <div className="mt-6 border-t border-neutral-200 pt-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-neutral-900">抽出結果: {allResults.length}件</h3>
-                <button
-                  onClick={saveAllResults}
-                  className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-                >
-                  すべて登録する
-                </button>
+                {saveError && (
+                  <button
+                    onClick={saveAllResults}
+                    disabled={saving}
+                    className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                  >
+                    {saving ? '保存中...' : '再保存する'}
+                  </button>
+                )}
               </div>
               <div className="mt-3 space-y-3">
                 {allResults.map((item, i) => {
