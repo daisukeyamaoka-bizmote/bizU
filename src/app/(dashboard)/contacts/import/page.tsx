@@ -60,6 +60,10 @@ export default function SmartImportPage() {
   const [result, setResult] = useState<{ added: number; updated: number; skipped: number; errors: number } | null>(null)
   const [errorRows, setErrorRows] = useState<ErrorRow[]>([])
 
+  // Progress tracking
+  const [progress, setProgress] = useState({ current: 0, total: 0, phase: '' })
+  const [estimatedSeconds, setEstimatedSeconds] = useState<number | null>(null)
+
   // ===== STEP 1: File Upload =====
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -138,6 +142,7 @@ export default function SmartImportPage() {
   // ===== STEP 2 → 3: Run Duplicate Check =====
   async function runDuplicateCheck() {
     setCheckingDuplicates(true)
+    setProgress({ current: 0, total: parsedData.length, phase: 'データベースから既存コンタクトを取得中...' })
     const supabase = createClient()
 
     const getValue = (row: ParsedRow, field: MappingField): string => {
@@ -151,6 +156,17 @@ export default function SmartImportPage() {
       .select('id, full_name, department, title, address, company_id, target_companies(name)')
       .eq('is_active', true)
 
+    // Build lookup maps for O(1) matching instead of O(n*m)
+    const contactsByNormalizedCompany = new Map<string, typeof existingContacts>()
+    for (const ec of existingContacts ?? []) {
+      const company = Array.isArray(ec.target_companies) ? ec.target_companies[0] : ec.target_companies
+      const normalizedName = normalizeCompanyName(company?.name ?? '')
+      if (!contactsByNormalizedCompany.has(normalizedName)) {
+        contactsByNormalizedCompany.set(normalizedName, [])
+      }
+      contactsByNormalizedCompany.get(normalizedName)!.push(ec)
+    }
+
     // Fetch sent letters for exclusion
     let sentContactIds = new Set<string>()
     if (excludeSentEnabled) {
@@ -163,9 +179,17 @@ export default function SmartImportPage() {
       sentContactIds = new Set((recentLetters ?? []).map(l => l.contact_id))
     }
 
+    setProgress({ current: 0, total: parsedData.length, phase: '重複チェック中...' })
+
     const dupes: DuplicateItem[] = []
 
     for (let i = 0; i < parsedData.length; i++) {
+      if (i % 50 === 0) {
+        setProgress({ current: i, total: parsedData.length, phase: '重複チェック中...' })
+        // Yield to UI thread
+        await new Promise(r => setTimeout(r, 0))
+      }
+
       const row = parsedData[i]
       const companyName = getValue(row, 'company_name')
       const fullName = getValue(row, 'full_name')
@@ -173,13 +197,14 @@ export default function SmartImportPage() {
 
       const normalizedCompany = normalizeCompanyName(companyName)
 
-      for (const ec of existingContacts ?? []) {
+      // O(1) lookup instead of iterating all contacts
+      const matchingContacts = contactsByNormalizedCompany.get(normalizedCompany) ?? []
+
+      for (const ec of matchingContacts) {
         const company = Array.isArray(ec.target_companies) ? ec.target_companies[0] : ec.target_companies
         const existingCompanyName = company?.name ?? ''
-        const normalizedExisting = normalizeCompanyName(existingCompanyName)
 
-        if (normalizedCompany === normalizedExisting && ec.full_name === fullName) {
-          // Level 1: Exact duplicate (company + name match)
+        if (ec.full_name === fullName) {
           const newTitle = getValue(row, 'title')
           const newDept = getValue(row, 'department')
           const newAddress = getValue(row, 'address')
@@ -189,7 +214,6 @@ export default function SmartImportPage() {
           if (newDept && newDept !== (ec.department ?? '') && ec.department) diffs.push(`部署: 「${ec.department}」→「${newDept}」`)
           if (newAddress && newAddress !== (ec.address ?? '') && ec.address) diffs.push(`住所: 変更あり`)
 
-          // Check if sent recently
           if (sentContactIds.has(ec.id)) {
             diffs.push(`直近${excludeSentDays}日以内に送付済み`)
           }
@@ -216,9 +240,7 @@ export default function SmartImportPage() {
             action: diffs.length > 0 ? 'update' : 'skip',
           })
           break
-        } else if (normalizedCompany === normalizedExisting && ec.full_name !== fullName) {
-          // Level 3: Company duplicate, different person
-          // Only add once per row
+        } else if (ec.full_name !== fullName) {
           if (!dupes.some(d => d.rowIndex === i)) {
             dupes.push({
               rowIndex: i,
@@ -249,6 +271,7 @@ export default function SmartImportPage() {
 
     setDuplicates(dupes)
     setCheckingDuplicates(false)
+    setProgress({ current: 0, total: 0, phase: '' })
     setStep(3)
   }
 
@@ -259,6 +282,9 @@ export default function SmartImportPage() {
   // ===== STEP 4: Execute Import =====
   async function executeImport() {
     setImporting(true)
+    const startTime = Date.now()
+    setProgress({ current: 0, total: parsedData.length, phase: 'インポート準備中...' })
+    setEstimatedSeconds(null)
     const supabase = createClient()
 
     const getValue = (row: ParsedRow, field: MappingField): string => {
@@ -274,6 +300,14 @@ export default function SmartImportPage() {
 
     const importLogId = importLog?.id ?? null
 
+    // Pre-fetch all companies for batch lookup
+    setProgress({ current: 0, total: parsedData.length, phase: '企業データを一括取得中...' })
+    const { data: allCompanies } = await supabase.from('target_companies').select('id, name')
+    const companyCache = new Map<string, string>()
+    for (const c of allCompanies ?? []) {
+      companyCache.set(c.name, c.id)
+    }
+
     let added = 0
     let updated = 0
     let skipped = 0
@@ -281,17 +315,33 @@ export default function SmartImportPage() {
 
     const dupeMap = new Map(duplicates.map(d => [d.rowIndex, d]))
 
+    setProgress({ current: 0, total: parsedData.length, phase: 'インポート中...' })
+
     for (let i = 0; i < parsedData.length; i++) {
+      // Update progress and estimated time every 5 rows
+      if (i % 5 === 0 || i === parsedData.length - 1) {
+        setProgress({ current: i + 1, total: parsedData.length, phase: 'インポート中...' })
+        const elapsed = (Date.now() - startTime) / 1000
+        if (i > 0) {
+          const perRow = elapsed / i
+          const remaining = Math.ceil(perRow * (parsedData.length - i))
+          setEstimatedSeconds(remaining)
+        }
+        // Yield to UI
+        await new Promise(r => setTimeout(r, 0))
+      }
+
       const row = parsedData[i]
       const companyName = getValue(row, 'company_name')
       const fullName = getValue(row, 'full_name')
+      const excelRow = i + 2 // Excel row (1-indexed header + 1-indexed data)
 
       if (!companyName) {
-        errors.push({ rowIndex: i, data: row, reason: '会社名が空です' })
+        errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 会社名が空です` })
         continue
       }
       if (!fullName) {
-        errors.push({ rowIndex: i, data: row, reason: '氏名が空です' })
+        errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 氏名が空です` })
         continue
       }
 
@@ -305,7 +355,6 @@ export default function SmartImportPage() {
         }
 
         if (dupe.action === 'update' && (dupe.level === 'exact' || dupe.level === 'update')) {
-          // Update existing contact
           const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() }
           const newTitle = getValue(row, 'title')
           const newDept = getValue(row, 'department')
@@ -323,25 +372,20 @@ export default function SmartImportPage() {
             .eq('id', dupe.existingContact.id)
 
           if (error) {
-            errors.push({ rowIndex: i, data: row, reason: `更新エラー: ${error.message}` })
+            errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 更新エラー - ${error.message}` })
           } else {
             updated++
           }
           continue
         }
-        // action === 'add' falls through to normal insert
       }
 
-      // Upsert company
+      // Company lookup with cache
       const industry = getValue(row, 'industry') || defaultIndustry
-      let { data: company } = await supabase
-        .from('target_companies')
-        .select('id')
-        .eq('name', companyName)
-        .single()
+      let companyId = companyCache.get(companyName)
 
-      if (!company) {
-        const { data: newCompany } = await supabase
+      if (!companyId) {
+        const { data: newCompany, error: companyError } = await supabase
           .from('target_companies')
           .insert({
             name: companyName,
@@ -349,20 +393,22 @@ export default function SmartImportPage() {
           })
           .select('id')
           .single()
-        company = newCompany
+
+        if (newCompany) {
+          companyId = newCompany.id
+          companyCache.set(companyName, companyId!)
+        } else {
+          errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 企業「${companyName}」の作成に失敗しました${companyError ? ' - ' + companyError.message : ''}` })
+          continue
+        }
       }
 
-      if (!company) {
-        errors.push({ rowIndex: i, data: row, reason: '企業レコードの作成に失敗しました' })
-        continue
-      }
-
-      // Check exact duplicate (not from dupe check, for rows that weren't flagged)
+      // Check exact duplicate for non-flagged rows
       if (!dupe) {
         const { data: existing } = await supabase
           .from('contacts')
           .select('id')
-          .eq('company_id', company.id)
+          .eq('company_id', companyId)
           .eq('full_name', fullName)
           .single()
 
@@ -374,7 +420,7 @@ export default function SmartImportPage() {
 
       const roleLevel = getValue(row, 'role_level')
       const { error } = await supabase.from('contacts').insert({
-        company_id: company.id,
+        company_id: companyId,
         full_name: fullName,
         department: getValue(row, 'department') || null,
         title: getValue(row, 'title') || null,
@@ -390,7 +436,7 @@ export default function SmartImportPage() {
         if (error.code === '23505') {
           skipped++
         } else {
-          errors.push({ rowIndex: i, data: row, reason: error.message })
+          errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: ${error.message}` })
         }
       } else {
         added++
@@ -410,6 +456,8 @@ export default function SmartImportPage() {
 
     setResult({ added, updated, skipped, errors: errors.length })
     setErrorRows(errors)
+    setEstimatedSeconds(null)
+    setProgress({ current: 0, total: 0, phase: '' })
     setStep(5)
     setImporting(false)
   }
@@ -475,6 +523,17 @@ export default function SmartImportPage() {
               </label>
             </div>
           </div>
+
+          {/* AI Mapping Loading */}
+          {aiMapping && (
+            <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-900" />
+                <p className="text-sm font-medium text-neutral-700">ファイルを読み込み中... AIが列を自動マッピングしています</p>
+              </div>
+              <p className="mt-2 text-xs text-neutral-400">数秒お待ちください</p>
+            </div>
+          )}
 
           {/* Options */}
           <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
@@ -563,6 +622,21 @@ export default function SmartImportPage() {
           </div>
 
           <p className="mt-3 text-sm text-neutral-600">データ件数: {parsedData.length}件</p>
+
+          {checkingDuplicates && progress.total > 0 && (
+            <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
+              <div className="flex items-center justify-between text-sm text-neutral-600">
+                <span>{progress.phase}</span>
+                <span>{progress.current} / {progress.total}件</span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+                <div
+                  className="h-full rounded-full bg-neutral-900 transition-all duration-300"
+                  style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 flex gap-3">
             <button
@@ -668,9 +742,38 @@ export default function SmartImportPage() {
       {step === 4 && (
         <div className="mt-6">
           <h2 className="text-lg font-semibold text-neutral-900">STEP 4: インポート実行中...</h2>
-          <div className="mt-4 flex items-center gap-3">
-            <div className="h-2 w-2 animate-pulse rounded-full bg-neutral-900" />
-            <p className="text-sm text-neutral-600">データを処理しています...</p>
+          <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+            <div className="flex items-center gap-3">
+              <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-900" />
+              <p className="text-sm font-medium text-neutral-700">{progress.phase || 'インポート準備中...'}</p>
+            </div>
+
+            {progress.total > 0 && (
+              <>
+                <div className="mt-4 flex items-center justify-between text-sm text-neutral-500">
+                  <span>{progress.current} / {progress.total}件 処理済み</span>
+                  <span>{Math.round((progress.current / progress.total) * 100)}%</span>
+                </div>
+                <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-neutral-100">
+                  <div
+                    className="h-full rounded-full bg-neutral-900 transition-all duration-300"
+                    style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                  />
+                </div>
+                {estimatedSeconds !== null && estimatedSeconds > 0 && (
+                  <p className="mt-3 text-xs text-neutral-400">
+                    残り約 {estimatedSeconds >= 60
+                      ? `${Math.floor(estimatedSeconds / 60)}分${estimatedSeconds % 60}秒`
+                      : `${estimatedSeconds}秒`
+                    }（目安）
+                  </p>
+                )}
+              </>
+            )}
+
+            <p className="mt-4 text-xs text-neutral-400">
+              このページを閉じないでください。処理が完了するまでお待ちください。
+            </p>
           </div>
         </div>
       )}
@@ -700,12 +803,30 @@ export default function SmartImportPage() {
           </div>
 
           {result.errors > 0 && (
-            <button
-              onClick={downloadErrors}
-              className="mt-4 rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
-            >
-              エラー行をダウンロード（Excel）
-            </button>
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-red-600">エラー詳細（{errorRows.length}件）</h3>
+              <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-red-200 bg-red-50">
+                {errorRows.map((e, idx) => (
+                  <div key={idx} className={`flex items-start gap-3 px-4 py-2.5 text-sm ${idx > 0 ? 'border-t border-red-100' : ''}`}>
+                    <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-xs font-mono font-medium text-red-700">
+                      {e.rowIndex + 2}行
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-red-700">{e.reason}</p>
+                      <p className="mt-0.5 truncate text-xs text-red-400">
+                        {Object.values(e.data).filter(Boolean).slice(0, 4).join(' / ')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={downloadErrors}
+                className="mt-3 rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
+              >
+                エラー行をダウンロード（Excel）
+              </button>
+            </div>
           )}
 
           <div className="mt-6 flex gap-3">
