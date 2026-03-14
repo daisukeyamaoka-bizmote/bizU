@@ -13,6 +13,8 @@ type LetterRow = {
   why_you_angle: string
   reaction_type: string | null
   reaction_id: string | null
+  is_approved: boolean
+  approved_by: string | null
 }
 
 type InlineReaction = {
@@ -50,7 +52,7 @@ export default function LettersPage() {
     const { data } = await supabase
       .from('letters')
       .select(`
-        id, sent_at, why_you_angle,
+        id, sent_at, why_you_angle, is_approved, approved_by,
         contacts(full_name, target_companies(name))
       `)
       .order('created_at', { ascending: false })
@@ -78,6 +80,8 @@ export default function LettersPage() {
         why_you_angle: l.why_you_angle,
         reaction_type: reaction?.reaction_type ?? null,
         reaction_id: reaction?.id ?? null,
+        is_approved: l.is_approved ?? false,
+        approved_by: l.approved_by ?? null,
       }
     })
 
@@ -159,6 +163,7 @@ export default function LettersPage() {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">会社名</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">送付日</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">切り口</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">承認状態</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">反応</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">操作</th>
             </tr>
@@ -166,13 +171,13 @@ export default function LettersPage() {
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-500">
                   読み込み中...
                 </td>
               </tr>
             ) : letters.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-500">
                   手紙がありません
                 </td>
               </tr>
@@ -232,6 +237,20 @@ function LetterRowWithReaction({
         <td className="px-4 py-3 text-sm text-neutral-600">{letter.sent_at ?? '-'}</td>
         <td className="px-4 py-3 text-sm text-neutral-600">{letter.why_you_angle}</td>
         <td className="px-4 py-3 text-sm">
+          {letter.is_approved ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+              承認済み
+            </span>
+          ) : (
+            <Link
+              href={`/letters/${letter.id}/review`}
+              className="rounded-full border border-dashed border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:border-amber-400"
+            >
+              未承認
+            </Link>
+          )}
+        </td>
+        <td className="px-4 py-3 text-sm">
           {letter.reaction_type ? (
             <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${reactionColor}`}>
               {letter.reaction_type}
@@ -255,7 +274,7 @@ function LetterRowWithReaction({
       {/* インライン反応記録フォーム */}
       {isExpanded && inline && (
         <tr>
-          <td colSpan={6} className="border-b border-neutral-200 bg-neutral-50 px-4 py-4">
+          <td colSpan={7} className="border-b border-neutral-200 bg-neutral-50 px-4 py-4">
             <div className="mx-auto max-w-3xl">
               {/* Step 1: 反応種別（5択ボタン） */}
               <div>

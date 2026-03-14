@@ -13,6 +13,7 @@ import {
   ChartBar,
   TrendUp,
   ChartLineUp,
+  GearSix,
   SignOut,
 } from '@phosphor-icons/react'
 
@@ -25,6 +26,7 @@ const navItems = [
   { href: '/cases', label: 'ケーススタディ', icon: ChartBar },
   { href: '/reactions', label: '反応記録', icon: TrendUp },
   { href: '/dashboard/intelligence', label: 'インテリジェンス', icon: ChartLineUp },
+  { href: '/settings/users', label: 'ユーザー管理', icon: GearSix },
 ]
 
 export default function Sidebar() {

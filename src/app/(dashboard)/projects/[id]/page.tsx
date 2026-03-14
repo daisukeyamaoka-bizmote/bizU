@@ -350,6 +350,7 @@ export default function ProjectDetailPage() {
             send_trigger: project.send_trigger ?? null,
             body_text: data.letter,
             collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
+            sources: data.sources ?? null,
           }).select('id').single()
 
           if (letter) {

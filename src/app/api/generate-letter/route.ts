@@ -8,6 +8,22 @@ const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルで�
 日本の大手企業の役員に送る、高反応率のパーソナライズ手紙を作成します。
 
 【出力フォーマット】
+以下のJSONフォーマットで出力してください。JSONのみを出力し、マークダウンのコードブロックや説明は一切付けないでください。
+
+{
+  "body_text": "手紙本文（マーカー付き）",
+  "sources": [
+    {
+      "index": 1,
+      "fact": "本文中で使用した具体的な事実（一文で）",
+      "source_name": "情報源の名称",
+      "source_url": "URL（ある場合、なければ空文字）",
+      "fetched_at": "YYYY-MM-DD形式（情報の取得日・推定日）"
+    }
+  ]
+}
+
+【手紙本文のルール】
 - 文字数: 830〜870文字
 - 段落数: 7段落
 - 構成:
@@ -19,9 +35,14 @@ const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルで�
   6. 締め
 - 各段落の文頭は1字下げ
 - 敬語は最高敬語を使用
-- 数値・固有名詞は具体的に
 - 営業感を出さず、課題解決の文脈で書く
-- 手紙本文のみを出力し、説明や注釈は一切付けない
+
+【ソースマーカーのルール】
+- 本文中の事実情報（具体的な数値・固有名詞・出来事）に[①][②][③]等のマーカーを挿入
+- 例: 「採用件数が前年比40%増加[①]しておられることを拝察し」
+- sourcesには本文中の全ての具体的な数値・固有名詞・出来事を含める
+- 抽象的な表現はsourcesに含めない
+- マーカーの番号はsources配列のindexと対応させる
 
 【重要】
 提供されたナレッジ情報がある場合、その内容を活用して手紙の説得力を高めてください。
@@ -106,15 +127,60 @@ bizmote株式会社
 
     const response = await callClaude({
       system: SYSTEM_PROMPT,
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [
         { role: 'user', content: userPrompt },
       ],
     })
 
-    const letter = getTextFromResponse(response)
+    const rawText = getTextFromResponse(response)
 
-    return NextResponse.json({ letter })
+    // Parse JSON response from Claude
+    let letter = rawText
+    let sources: Array<{
+      index: number
+      fact: string
+      source_name: string
+      source_url: string
+      fetched_at: string
+      is_verified: boolean
+      freshness: string
+    }> = []
+
+    try {
+      // Extract JSON from response (may be wrapped in markdown code block)
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0])
+        if (parsed.body_text) {
+          letter = parsed.body_text
+        }
+        if (Array.isArray(parsed.sources)) {
+          const today = new Date()
+          sources = parsed.sources.map((s: { index: number; fact: string; source_name: string; source_url?: string; fetched_at?: string }) => {
+            const fetchedAt = s.fetched_at || today.toISOString().split('T')[0]
+            const fetchedDate = new Date(fetchedAt)
+            const daysDiff = Math.floor((today.getTime() - fetchedDate.getTime()) / (1000 * 60 * 60 * 24))
+            let freshness = 'fresh'
+            if (daysDiff > 180) freshness = 'stale'
+            else if (daysDiff > 30) freshness = 'caution'
+            return {
+              index: s.index,
+              fact: s.fact,
+              source_name: s.source_name,
+              source_url: s.source_url || '',
+              fetched_at: fetchedAt,
+              is_verified: false,
+              freshness,
+            }
+          })
+        }
+      }
+    } catch {
+      // If JSON parsing fails, return raw text as letter body with no sources
+    }
+
+    return NextResponse.json({ letter, sources })
   } catch (error) {
     console.error('Letter generation error:', error)
     return NextResponse.json(

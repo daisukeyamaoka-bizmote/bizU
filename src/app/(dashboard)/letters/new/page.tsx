@@ -39,6 +39,8 @@ export default function NewLetterPage() {
   const [selectedCaseStudy, setSelectedCaseStudy] = useState<string>('')
   const [collectedContext, setCollectedContext] = useState('')
   const [generatedLetter, setGeneratedLetter] = useState('')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [generatedSources, setGeneratedSources] = useState<any[] | null>(null)
   const [generating, setGenerating] = useState(false)
   const [collectingInfo, setCollectingInfo] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -153,6 +155,7 @@ export default function NewLetterPage() {
       })
       const data = await res.json()
       setGeneratedLetter(data.letter ?? '')
+      setGeneratedSources(data.sources ?? null)
     } catch {
       setGeneratedLetter('生成に失敗しました。')
     }
@@ -170,6 +173,7 @@ export default function NewLetterPage() {
       send_trigger: sendTrigger,
       collected_context: collectedContext,
       body_text: generatedLetter,
+      sources: generatedSources,
     })
     setSaved(true)
   }

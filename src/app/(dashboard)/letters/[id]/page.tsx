@@ -44,6 +44,18 @@ export default async function LetterDetailPage({
           ← 手紙一覧
         </Link>
         <h1 className="text-2xl font-bold text-neutral-900">手紙詳細</h1>
+        {letter.is_approved ? (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
+            承認済み ({letter.approved_by})
+          </span>
+        ) : (
+          <Link
+            href={`/letters/${id}/review`}
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            確認・承認へ
+          </Link>
+        )}
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">

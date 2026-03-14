@@ -11,7 +11,25 @@ export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
   try {
-    const { contact, clientName, bodyText } = await request.json()
+    const { contact, clientName, bodyText, letterId } = await request.json()
+
+    // If letterId is provided, check approval status
+    if (letterId) {
+      const { createClient } = await import('@/lib/supabase/server')
+      const supabase = await createClient()
+      const { data: letter } = await supabase
+        .from('letters')
+        .select('is_approved')
+        .eq('id', letterId)
+        .single()
+
+      if (letter && !letter.is_approved) {
+        return NextResponse.json(
+          { error: '承認が必要です。ファクトチェック画面で承認してからダウンロードしてください。' },
+          { status: 403 }
+        )
+      }
+    }
 
     const now = new Date()
     const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`
