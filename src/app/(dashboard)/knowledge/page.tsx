@@ -402,7 +402,7 @@ export default function KnowledgePage() {
                       </span>
                       <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
                       {s.status === 'done' && <span className="text-xs text-green-600">{s.results.length}件抽出</span>}
-                      {s.status === 'error' && <span className="max-w-xs truncate text-xs text-red-600" title={s.error}>{s.error}</span>}
+                      {s.status === 'error' && <span className="max-w-sm text-xs text-red-600 break-all" title={s.error}>{s.error}</span>}
                       {s.status === 'extracting' && s.stage && (
                         <span className="text-xs text-blue-600">{STAGE_LABELS[s.stage]}</span>
                       )}
