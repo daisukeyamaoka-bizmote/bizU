@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx'
 import Link from 'next/link'
 
 type ParsedRow = Record<string, string>
-type MappingField = 'company_name' | 'full_name' | 'department' | 'title' | 'role_level' | 'postal_code' | 'address' | 'industry' | 'info_source' | null
+type MappingField = 'company_name' | 'full_name' | 'last_name' | 'first_name' | 'department' | 'title' | 'role_level' | 'postal_code' | 'address' | 'industry' | 'info_source' | null
 
 type DuplicateItem = {
   rowIndex: number
@@ -26,7 +26,9 @@ type ErrorRow = {
 
 const FIELD_OPTIONS: { value: MappingField | 'skip'; label: string }[] = [
   { value: 'company_name', label: '会社名' },
-  { value: 'full_name', label: '氏名' },
+  { value: 'full_name', label: '氏名（フルネーム）' },
+  { value: 'last_name', label: '姓' },
+  { value: 'first_name', label: '名' },
   { value: 'department', label: '部署' },
   { value: 'title', label: '役職' },
   { value: 'role_level', label: '役職レベル' },
@@ -123,13 +125,16 @@ export default function SmartImportPage() {
       const newMapping: Record<string, MappingField | 'skip'> = {}
       const newStatus: Record<string, 'auto' | 'manual' | 'skip'> = {}
       for (const h of hdrs) {
-        if (h.includes('会社') || h.includes('企業')) { newMapping[h] = 'company_name'; newStatus[h] = 'auto' }
-        else if (h.includes('氏名') || h.includes('名前')) { newMapping[h] = 'full_name'; newStatus[h] = 'auto' }
-        else if (h.includes('部署') || h.includes('所属')) { newMapping[h] = 'department'; newStatus[h] = 'auto' }
-        else if (h.includes('役職') || h.includes('職位')) { newMapping[h] = 'title'; newStatus[h] = 'auto' }
-        else if (h.includes('郵便')) { newMapping[h] = 'postal_code'; newStatus[h] = 'auto' }
-        else if (h.includes('住所')) { newMapping[h] = 'address'; newStatus[h] = 'auto' }
-        else if (h.includes('業種')) { newMapping[h] = 'industry'; newStatus[h] = 'auto' }
+        const hNorm = h.replace(/[（）()＊*\s]/g, '')
+        if (hNorm.includes('会社') || hNorm.includes('企業')) { newMapping[h] = 'company_name'; newStatus[h] = 'auto' }
+        else if (hNorm === '姓' || hNorm === 'セイ' || hNorm === '苗字' || hNorm === 'ラストネーム' || hNorm === 'last_name') { newMapping[h] = 'last_name'; newStatus[h] = 'auto' }
+        else if (hNorm === '名' || hNorm === 'メイ' || hNorm === 'ファーストネーム' || hNorm === 'first_name') { newMapping[h] = 'first_name'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('氏名') || hNorm.includes('名前') || hNorm.includes('フルネーム') || hNorm === '担当者名') { newMapping[h] = 'full_name'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('部署') || hNorm.includes('所属')) { newMapping[h] = 'department'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('役職') || hNorm.includes('職位') || hNorm.includes('肩書')) { newMapping[h] = 'title'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('郵便')) { newMapping[h] = 'postal_code'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('住所')) { newMapping[h] = 'address'; newStatus[h] = 'auto' }
+        else if (hNorm.includes('業種')) { newMapping[h] = 'industry'; newStatus[h] = 'auto' }
         else { newMapping[h] = 'skip'; newStatus[h] = 'skip' }
       }
       setMapping(newMapping)
@@ -139,6 +144,20 @@ export default function SmartImportPage() {
     setStep(2)
   }, [])
 
+  // Helper: resolve full name from mapping (supports full_name OR last_name + first_name)
+  function resolveFullName(row: ParsedRow): string {
+    const getVal = (field: MappingField): string => {
+      const header = Object.entries(mapping).find(([, v]) => v === field)?.[0]
+      return header ? (row[header] ?? '').toString().trim() : ''
+    }
+    const fullName = getVal('full_name')
+    if (fullName) return fullName
+    const lastName = getVal('last_name')
+    const firstName = getVal('first_name')
+    if (lastName || firstName) return `${lastName} ${firstName}`.trim()
+    return ''
+  }
+
   // ===== STEP 2 → 3: Run Duplicate Check =====
   async function runDuplicateCheck() {
     setCheckingDuplicates(true)
@@ -147,7 +166,7 @@ export default function SmartImportPage() {
 
     const getValue = (row: ParsedRow, field: MappingField): string => {
       const header = Object.entries(mapping).find(([, v]) => v === field)?.[0]
-      return header ? (row[header] ?? '').trim() : ''
+      return header ? (row[header] ?? '').toString().trim() : ''
     }
 
     // Fetch all existing contacts
@@ -192,7 +211,7 @@ export default function SmartImportPage() {
 
       const row = parsedData[i]
       const companyName = getValue(row, 'company_name')
-      const fullName = getValue(row, 'full_name')
+      const fullName = resolveFullName(row)
       if (!companyName || !fullName) continue
 
       const normalizedCompany = normalizeCompanyName(companyName)
@@ -289,16 +308,20 @@ export default function SmartImportPage() {
 
     const getValue = (row: ParsedRow, field: MappingField): string => {
       const header = Object.entries(mapping).find(([, v]) => v === field)?.[0]
-      return header ? (row[header] ?? '').trim() : ''
+      return header ? (row[header] ?? '').toString().trim() : ''
     }
 
-    // Create import log
-    const { data: importLog } = await supabase.from('import_logs').insert({
-      file_name: fileName,
-      total_rows: parsedData.length,
-    }).select('id').single()
-
-    const importLogId = importLog?.id ?? null
+    // Create import log (table may not exist yet - handle gracefully)
+    let importLogId: string | null = null
+    try {
+      const { data: importLog } = await supabase.from('import_logs').insert({
+        file_name: fileName,
+        total_rows: parsedData.length,
+      }).select('id').single()
+      importLogId = importLog?.id ?? null
+    } catch {
+      // import_logs table doesn't exist yet - continue without logging
+    }
 
     // Pre-fetch all companies for batch lookup
     setProgress({ current: 0, total: parsedData.length, phase: '企業データを一括取得中...' })
@@ -333,7 +356,7 @@ export default function SmartImportPage() {
 
       const row = parsedData[i]
       const companyName = getValue(row, 'company_name')
-      const fullName = getValue(row, 'full_name')
+      const fullName = resolveFullName(row)
       const excelRow = i + 2 // Excel row (1-indexed header + 1-indexed data)
 
       if (!companyName) {
@@ -364,7 +387,6 @@ export default function SmartImportPage() {
           if (newDept) updateData.department = newDept
           if (newAddress) updateData.address = newAddress
           if (newPostal) updateData.postal_code = newPostal
-          if (importLogId) updateData.import_log_id = importLogId
 
           const { error } = await supabase
             .from('contacts')
@@ -419,7 +441,7 @@ export default function SmartImportPage() {
       }
 
       const roleLevel = getValue(row, 'role_level')
-      const { error } = await supabase.from('contacts').insert({
+      const insertData: Record<string, unknown> = {
         company_id: companyId,
         full_name: fullName,
         department: getValue(row, 'department') || null,
@@ -429,8 +451,8 @@ export default function SmartImportPage() {
         address: getValue(row, 'address') || null,
         info_source: getValue(row, 'info_source') || 'その他',
         info_acquired_at: new Date().toISOString().split('T')[0],
-        import_log_id: importLogId,
-      })
+      }
+      const { error } = await supabase.from('contacts').insert(insertData)
 
       if (error) {
         if (error.code === '23505') {
@@ -481,7 +503,9 @@ export default function SmartImportPage() {
   const missingFields: string[] = []
   const mappedFields = new Set(Object.values(mapping).filter(v => v !== 'skip'))
   if (!mappedFields.has('company_name')) missingFields.push('会社名')
-  if (!mappedFields.has('full_name')) missingFields.push('氏名')
+  // full_name is satisfied by either full_name OR (last_name + first_name)
+  const hasFullName = mappedFields.has('full_name') || (mappedFields.has('last_name') && mappedFields.has('first_name'))
+  if (!hasFullName) missingFields.push('氏名（「氏名」または「姓」+「名」）')
 
   const exactDupes = duplicates.filter(d => d.level === 'exact')
   const updateDupes = duplicates.filter(d => d.level === 'update')
@@ -716,7 +740,7 @@ export default function SmartImportPage() {
                 }
                 return (
                   <p key={i} className="text-sm text-neutral-600">
-                    {getVal('full_name')} / {getVal('company_name')} / {getVal('title')} / {getVal('department')}
+                    {resolveFullName(row)} / {getVal('company_name')} / {getVal('title')} / {getVal('department')}
                   </p>
                 )
               })}
