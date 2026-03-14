@@ -9,12 +9,17 @@ type LetterRow = {
   id: string
   contact_name: string
   company_name: string
+  department: string | null
+  title: string | null
+  client_name: string
+  body_text: string
   sent_at: string | null
   why_you_angle: string
   reaction_type: string | null
   reaction_id: string | null
   is_approved: boolean
   approved_by: string | null
+  created_at: string
 }
 
 type InlineReaction = {
@@ -36,12 +41,16 @@ const REACTION_COLORS: Record<string, string> = {
   '再送希望': 'bg-amber-50 text-amber-700 border-amber-200',
 }
 
+type SortKey = 'created_at' | 'contact_name' | 'company_name' | 'sent_at' | 'why_you_angle'
+
 export default function LettersPage() {
   const [letters, setLetters] = useState<LetterRow[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [inline, setInline] = useState<InlineReaction | null>(null)
   const [saving, setSaving] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('created_at')
+  const [sortAsc, setSortAsc] = useState(false)
 
   useEffect(() => {
     loadLetters()
@@ -52,8 +61,9 @@ export default function LettersPage() {
     const { data } = await supabase
       .from('letters')
       .select(`
-        id, sent_at, why_you_angle, is_approved, approved_by,
-        contacts(full_name, target_companies(name))
+        id, sent_at, why_you_angle, is_approved, approved_by, body_text, created_at,
+        contacts(full_name, department, title, target_companies(name)),
+        clients(name)
       `)
       .order('created_at', { ascending: false })
       .limit(100)
@@ -71,22 +81,55 @@ export default function LettersPage() {
       const company = contact && 'target_companies' in contact
         ? (Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies)
         : null
+      const clientObj = Array.isArray(l.clients) ? l.clients[0] : l.clients
       const reaction = (reactions ?? []).find(r => r.letter_id === l.id)
       return {
         id: l.id,
         contact_name: contact?.full_name ?? '-',
         company_name: (company as { name: string } | null)?.name ?? '-',
+        department: contact?.department ?? null,
+        title: contact?.title ?? null,
+        client_name: (clientObj as { name: string } | null)?.name ?? '',
+        body_text: l.body_text ?? '',
         sent_at: l.sent_at,
         why_you_angle: l.why_you_angle,
         reaction_type: reaction?.reaction_type ?? null,
         reaction_id: reaction?.id ?? null,
         is_approved: l.is_approved ?? false,
         approved_by: l.approved_by ?? null,
+        created_at: l.created_at,
       }
     })
 
     setLetters(mapped)
     setLoading(false)
+  }
+
+  async function downloadDocx(letter: LetterRow) {
+    const res = await fetch('/api/generate-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contact: {
+          full_name: letter.contact_name,
+          company_name: letter.company_name,
+          department: letter.department,
+          title: letter.title,
+        },
+        clientName: letter.client_name,
+        bodyText: letter.body_text,
+      }),
+    })
+    const blob = await res.blob()
+    const now = new Date()
+    const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+    const fileName = `${letter.client_name}手紙施策_${yyyymm}_${letter.company_name} ${letter.department ?? ''} ${letter.title ?? ''} ${letter.contact_name} 様.docx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   function openInlineReaction(letterId: string) {
@@ -143,6 +186,26 @@ export default function LettersPage() {
     loadLetters()
   }
 
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortAsc(!sortAsc)
+    else { setSortKey(key); setSortAsc(key === 'contact_name' || key === 'company_name') }
+  }
+
+  const sortedLetters = [...letters].sort((a, b) => {
+    const va = (a[sortKey as keyof LetterRow] ?? '') as string
+    const vb = (b[sortKey as keyof LetterRow] ?? '') as string
+    return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va)
+  })
+
+  const SortHeader = ({ k, label }: { k: SortKey; label: string }) => (
+    <th
+      onClick={() => handleSort(k)}
+      className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-900 select-none"
+    >
+      {label}{sortKey === k ? (sortAsc ? ' ↑' : ' ↓') : ''}
+    </th>
+  )
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -159,10 +222,10 @@ export default function LettersPage() {
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">宛先</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">会社名</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">送付日</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">切り口</th>
+              <SortHeader k="contact_name" label="宛先" />
+              <SortHeader k="company_name" label="会社名" />
+              <SortHeader k="sent_at" label="送付日" />
+              <SortHeader k="why_you_angle" label="切り口" />
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">承認状態</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">反応</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">操作</th>
@@ -182,7 +245,7 @@ export default function LettersPage() {
                 </td>
               </tr>
             ) : (
-              letters.map((letter) => (
+              sortedLetters.map((letter) => (
                 <LetterRowWithReaction
                   key={letter.id}
                   letter={letter}
@@ -194,6 +257,7 @@ export default function LettersPage() {
                   onSelectType={selectReactionType}
                   onUpdateInline={(updates) => inline && setInline({ ...inline, ...updates })}
                   onSave={saveReaction}
+                  onDownloadDocx={() => downloadDocx(letter)}
                 />
               ))
             )}
@@ -214,6 +278,7 @@ function LetterRowWithReaction({
   onSelectType,
   onUpdateInline,
   onSave,
+  onDownloadDocx,
 }: {
   letter: LetterRow
   isExpanded: boolean
@@ -224,6 +289,7 @@ function LetterRowWithReaction({
   onSelectType: (type: string) => void
   onUpdateInline: (updates: Partial<InlineReaction>) => void
   onSave: () => void
+  onDownloadDocx: () => void
 }) {
   const reactionColor = letter.reaction_type
     ? REACTION_COLORS[letter.reaction_type] ?? 'bg-neutral-100 text-neutral-600'
@@ -265,9 +331,19 @@ function LetterRowWithReaction({
           )}
         </td>
         <td className="px-4 py-3 text-sm">
-          <Link href={`/letters/${letter.id}`} className="text-neutral-900 hover:underline">
-            詳細
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href={`/letters/${letter.id}`} className="text-neutral-900 hover:underline">
+              詳細
+            </Link>
+            {letter.body_text && (
+              <button
+                onClick={onDownloadDocx}
+                className="rounded bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200"
+              >
+                docx
+              </button>
+            )}
+          </div>
         </td>
       </tr>
 

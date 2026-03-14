@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { WHY_YOU_ANGLES, SEND_TRIGGERS } from '@/lib/constants'
+import { WHY_YOU_ANGLES } from '@/lib/constants'
 import { useNotification } from '@/lib/useNotification'
 
 type Contact = {
@@ -42,13 +42,15 @@ export default function NewLetterPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [selectedClient, setSelectedClient] = useState<string>('')
   const [whyYouAngle, setWhyYouAngle] = useState<string>(WHY_YOU_ANGLES[0])
-  const [sendTrigger, setSendTrigger] = useState<string>(SEND_TRIGGERS[0])
+  const [customAngle, setCustomAngle] = useState('')
   const [selectedCaseStudy, setSelectedCaseStudy] = useState<string>('')
   const [collectedContext, setCollectedContext] = useState('')
   const [generatedLetter, setGeneratedLetter] = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [generatedSources, setGeneratedSources] = useState<any[] | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [generatingProgress, setGeneratingProgress] = useState(0)
+  const [generatingPhase, setGeneratingPhase] = useState('')
   const [collectingInfo, setCollectingInfo] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -133,6 +135,8 @@ export default function NewLetterPage() {
   async function generateLetter() {
     if (!selectedContact || !selectedClient || !selectedCaseStudy) return
     setGenerating(true)
+    setGeneratingProgress(0)
+    setGeneratingPhase('ナレッジを取得中...')
 
     const caseStudy = caseStudies.find(cs => cs.id === selectedCaseStudy)
     const client = clients.find(c => c.id === selectedClient)
@@ -146,6 +150,22 @@ export default function NewLetterPage() {
       .limit(10)
     const knowledgeContext = knowledge ?? []
 
+    setGeneratingProgress(10)
+    setGeneratingPhase('AIが手紙を作成中...')
+
+    // プログレスアニメーション（API応答まで10%→85%を段階的に進行）
+    const progressInterval = setInterval(() => {
+      setGeneratingProgress(prev => {
+        if (prev >= 85) { clearInterval(progressInterval); return 85 }
+        return prev + 1
+      })
+    }, 500)
+
+    // フェーズテキストを段階的に更新
+    const phaseTimeout1 = setTimeout(() => setGeneratingPhase('企業情報を分析中...'), 5000)
+    const phaseTimeout2 = setTimeout(() => setGeneratingPhase('パーソナライズ文面を構成中...'), 15000)
+    const phaseTimeout3 = setTimeout(() => setGeneratingPhase('文章を推敲中...'), 25000)
+
     try {
       const res = await fetch('/api/generate-letter', {
         method: 'POST',
@@ -154,21 +174,35 @@ export default function NewLetterPage() {
           contact: selectedContact,
           client,
           caseStudy,
-          whyYouAngle,
-          sendTrigger,
+          whyYouAngle: whyYouAngle === 'その他' ? customAngle : whyYouAngle,
+          sendTrigger: '',
           collectedContext,
           knowledgeContext,
         }),
       })
+      clearInterval(progressInterval)
+      clearTimeout(phaseTimeout1)
+      clearTimeout(phaseTimeout2)
+      clearTimeout(phaseTimeout3)
+      setGeneratingProgress(95)
+      setGeneratingPhase('完了処理中...')
+
       const data = await res.json()
+      setGeneratingProgress(100)
       setGeneratedLetter(data.letter ?? '')
       setGeneratedSources(data.sources ?? null)
       notify('手紙生成完了', `${selectedContact.full_name}宛の手紙が生成されました`)
     } catch {
+      clearInterval(progressInterval)
+      clearTimeout(phaseTimeout1)
+      clearTimeout(phaseTimeout2)
+      clearTimeout(phaseTimeout3)
       setGeneratedLetter('生成に失敗しました。')
       notify('手紙生成エラー', '生成に失敗しました')
     }
     setGenerating(false)
+    setGeneratingProgress(0)
+    setGeneratingPhase('')
   }
 
   async function saveLetter() {
@@ -178,13 +212,14 @@ export default function NewLetterPage() {
       client_id: selectedClient,
       contact_id: selectedContact.id,
       case_study_id: selectedCaseStudy,
-      why_you_angle: whyYouAngle,
-      send_trigger: sendTrigger,
+      why_you_angle: whyYouAngle === 'その他' ? customAngle : whyYouAngle,
       collected_context: collectedContext,
       body_text: generatedLetter,
       sources: generatedSources,
     })
     setSaved(true)
+    // 保存後に自動でdocxダウンロード
+    downloadDocx()
   }
 
   async function downloadDocx() {
@@ -313,28 +348,30 @@ export default function NewLetterPage() {
 
             <div>
               <label className="block text-sm font-medium text-neutral-700">Why Youの切り口</label>
-              <select
-                value={whyYouAngle}
-                onChange={(e) => setWhyYouAngle(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
-              >
+              <div className="mt-2 flex flex-wrap gap-2">
                 {WHY_YOU_ANGLES.map((a) => (
-                  <option key={a} value={a}>{a}</option>
+                  <button
+                    key={a}
+                    onClick={() => setWhyYouAngle(a)}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-all ${
+                      whyYouAngle === a
+                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    {a}
+                  </button>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-neutral-700">送付トリガー</label>
-              <select
-                value={sendTrigger}
-                onChange={(e) => setSendTrigger(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
-              >
-                {SEND_TRIGGERS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+              </div>
+              {whyYouAngle === 'その他' && (
+                <input
+                  type="text"
+                  value={customAngle}
+                  onChange={(e) => setCustomAngle(e.target.value)}
+                  placeholder="切り口を入力"
+                  className="mt-2 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+                />
+              )}
             </div>
 
             <div>
@@ -377,13 +414,39 @@ export default function NewLetterPage() {
       <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
         <h2 className="text-lg font-semibold text-neutral-900">STEP 3: 生成・確認</h2>
 
-        <button
-          onClick={generateLetter}
-          disabled={generating || !selectedContact || !selectedClient}
-          className="mt-4 rounded-lg bg-neutral-900 px-6 py-3 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-        >
-          {generating ? '生成中...' : '手紙を生成する'}
-        </button>
+        {!generating && (
+          <button
+            onClick={generateLetter}
+            disabled={!selectedContact || !selectedClient}
+            className="mt-4 rounded-lg bg-neutral-900 px-6 py-3 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            手紙を生成する
+          </button>
+        )}
+
+        {generating && (
+          <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-6">
+            <div className="flex items-center gap-3">
+              <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-900" />
+              <p className="text-sm font-medium text-neutral-700">{generatingPhase}</p>
+            </div>
+            <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
+              <span>{generatingProgress}%</span>
+              <span>
+                {generatingProgress < 30 ? '残り約30秒' :
+                 generatingProgress < 60 ? '残り約20秒' :
+                 generatingProgress < 85 ? '残り約10秒' : 'もうすぐ完了'}
+              </span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
+              <div
+                className="h-full rounded-full bg-neutral-900 transition-all duration-500 ease-out"
+                style={{ width: `${generatingProgress}%` }}
+              />
+            </div>
+            <p className="mt-3 text-xs text-neutral-400">Opusモデルで高品質な手紙を生成しています。30〜40秒ほどかかります。</p>
+          </div>
+        )}
 
         {generatedLetter && (
           <div className="mt-6">

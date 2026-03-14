@@ -19,9 +19,9 @@ import {
 
 const navItems = [
   { href: '/', label: 'ダッシュボード', icon: SquaresFour },
-  { href: '/contacts', label: '1. リスト管理', icon: Users },
-  { href: '/knowledge', label: '2. ナレッジ', icon: BookOpen },
-  { href: '/projects', label: '3. 手紙作成', icon: FolderSimple },
+  { href: '/contacts', label: 'リスト管理', icon: Users },
+  { href: '/knowledge', label: 'ナレッジ', icon: BookOpen },
+  { href: '/projects', label: '手紙作成', icon: FolderSimple },
   { href: '/letters', label: '手紙一覧', icon: EnvelopeSimple },
   { href: '/cases', label: 'ケーススタディ', icon: ChartBar },
   { href: '/reactions', label: '反応記録', icon: TrendUp },

@@ -13,6 +13,7 @@ type KnowledgeItem = {
   source_name: string | null
   tags: string[] | null
   client_name: string
+  created_at: string
 }
 
 type ExtractedItem = {
@@ -70,6 +71,10 @@ export default function KnowledgePage() {
   const [selectedClientId, setSelectedClientId] = useState<string>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const [sortKey, setSortKey] = useState<'created_at' | 'title' | 'category' | 'source_name'>('created_at')
+  const [sortAsc, setSortAsc] = useState(false)
 
   // Upload state
   const [showUpload, setShowUpload] = useState(false)
@@ -90,7 +95,7 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     loadItems()
-  }, [selectedClientId, categoryFilter])
+  }, [selectedClientId, categoryFilter, sortKey, sortAsc])
 
   async function loadClients() {
     const supabase = createClient()
@@ -103,8 +108,8 @@ export default function KnowledgePage() {
     const supabase = createClient()
     let query = supabase
       .from('knowledge_items')
-      .select('id, category, title, content, source_type, source_name, tags, client_id')
-      .order('created_at', { ascending: false })
+      .select('id, category, title, content, source_type, source_name, tags, client_id, created_at')
+      .order(sortKey, { ascending: sortAsc })
 
     if (selectedClientId !== 'all') {
       query = query.eq('client_id', selectedClientId)
@@ -130,6 +135,7 @@ export default function KnowledgePage() {
       source_name: k.source_name,
       tags: k.tags,
       client_name: clientMap.get(k.client_id ?? '') ?? '-',
+      created_at: k.created_at,
     }))
     setItems(mapped)
     setLoading(false)
@@ -405,6 +411,43 @@ export default function KnowledgePage() {
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === items.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(items.map(i => i.id)))
+    }
+  }
+
+  async function deleteSelected() {
+    if (selectedIds.size === 0) return
+    if (!confirm(`${selectedIds.size}件のナレッジを削除しますか？`)) return
+    setDeleting(true)
+    const supabase = createClient()
+    await supabase.from('knowledge_items').delete().in('id', Array.from(selectedIds))
+    setSelectedIds(new Set())
+    setDeleting(false)
+    loadItems()
+  }
+
+  function handleSort(key: typeof sortKey) {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc)
+    } else {
+      setSortKey(key)
+      setSortAsc(key === 'title' || key === 'category')
+    }
+  }
+
   const doneCount = sources.filter(s => s.status === 'done').length
   const pendingCount = sources.filter(s => s.status === 'pending').length
 
@@ -627,8 +670,8 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      {/* フィルター */}
-      <div className="mt-6 flex flex-wrap gap-3">
+      {/* フィルター・ソート・削除 */}
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <select
           value={selectedClientId}
           onChange={(e) => setSelectedClientId(e.target.value)}
@@ -649,10 +692,55 @@ export default function KnowledgePage() {
             <option key={key} value={key}>{val.text}</option>
           ))}
         </select>
+
+        <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white p-0.5">
+          {([
+            ['created_at', '日付'],
+            ['title', 'タイトル'],
+            ['category', 'カテゴリ'],
+            ['source_name', '元資料'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => handleSort(key)}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                sortKey === key ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'
+              }`}
+            >
+              {label}{sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
+            </button>
+          ))}
+        </div>
+
+        {selectedIds.size > 0 && (
+          <button
+            onClick={deleteSelected}
+            disabled={deleting}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {deleting ? '削除中...' : `${selectedIds.size}件を削除`}
+          </button>
+        )}
       </div>
 
+      {/* 一括選択 */}
+      {items.length > 0 && (
+        <div className="mt-4 flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-neutral-500">
+            <input
+              type="checkbox"
+              checked={selectedIds.size === items.length && items.length > 0}
+              onChange={toggleSelectAll}
+              className="h-4 w-4 rounded border-neutral-300"
+            />
+            全選択
+          </label>
+          <span className="text-xs text-neutral-400">{items.length}件</span>
+        </div>
+      )}
+
       {/* ナレッジ一覧 */}
-      <div className="mt-4 space-y-3">
+      <div className="mt-2 space-y-3">
         {loading ? (
           <p className="text-sm text-neutral-500">読み込み中...</p>
         ) : items.length === 0 ? (
@@ -664,32 +752,48 @@ export default function KnowledgePage() {
           items.map((item) => {
             const cat = CATEGORY_LABELS[item.category] ?? CATEGORY_LABELS.other
             const isExpanded = expandedId === item.id
+            const isSelected = selectedIds.has(item.id)
             return (
               <div
                 key={item.id}
-                className="rounded-lg border border-neutral-200 bg-white transition-all hover:border-neutral-300"
+                className={`rounded-lg border bg-white transition-all hover:border-neutral-300 ${isSelected ? 'border-neutral-400 ring-1 ring-neutral-300' : 'border-neutral-200'}`}
               >
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                  className="flex w-full items-start gap-3 p-4 text-left"
-                >
-                  <span className={`mt-0.5 rounded-full px-2 py-0.5 text-xs font-medium ${cat.color}`}>
-                    {cat.text}
-                  </span>
-                  <div className="flex-1">
-                    <p className="font-medium text-neutral-900">{item.title}</p>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
-                      <span>{item.client_name}</span>
-                      {item.source_name && <span>{item.source_name}</span>}
+                <div className="flex items-start gap-3 p-4">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelect(item.id)}
+                    className="mt-1 h-4 w-4 rounded border-neutral-300"
+                  />
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                    className="flex flex-1 items-start gap-3 text-left"
+                  >
+                    <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cat.color}`}>
+                      {cat.text}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-neutral-900">{item.title}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-neutral-400">{item.client_name}</span>
+                        {item.source_name && (
+                          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">
+                            {item.source_type === 'url' ? '🔗' : '📄'} {item.source_name}
+                          </span>
+                        )}
+                        <span className="text-neutral-300">
+                          {new Date(item.created_at).toLocaleDateString('ja-JP')}
+                        </span>
+                      </div>
+                      {!isExpanded && (
+                        <p className="mt-1 text-sm text-neutral-500 line-clamp-2">{item.content}</p>
+                      )}
                     </div>
-                    {!isExpanded && (
-                      <p className="mt-1 text-sm text-neutral-500 line-clamp-2">{item.content}</p>
-                    )}
-                  </div>
-                  <span className="text-neutral-400">{isExpanded ? '▲' : '▼'}</span>
-                </button>
+                    <span className="text-neutral-400">{isExpanded ? '▲' : '▼'}</span>
+                  </button>
+                </div>
                 {isExpanded && (
-                  <div className="border-t border-neutral-100 px-4 pb-4 pt-3">
+                  <div className="border-t border-neutral-100 px-4 pb-4 pt-3 ml-7">
                     <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">{item.content}</p>
                     {item.tags && item.tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1">
