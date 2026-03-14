@@ -94,9 +94,12 @@ async function extractTextFromPptx(buffer: ArrayBuffer): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    console.log('[extract-knowledge] ANTHROPIC_API_KEY present:', !!apiKey, 'length:', apiKey?.length)
+    if (!apiKey) {
+      return NextResponse.json({ error: 'ANTHROPIC_API_KEY が設定されていません。.env.local を確認してください。' }, { status: 500 })
+    }
+    const anthropic = new Anthropic({ apiKey })
     const contentType = request.headers.get('content-type') ?? ''
 
     let textContent = ''
