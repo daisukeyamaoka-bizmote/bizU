@@ -228,6 +228,29 @@ export default function ProjectDetailPage() {
       caseStudy = data
     }
 
+    // Get knowledge context for this client
+    const { data: knowledgeIds } = await supabase
+      .from('project_knowledge')
+      .select('knowledge_id')
+      .eq('project_id', projectId)
+
+    let knowledgeContext: { category: string; title: string; content: string }[] = []
+    if (knowledgeIds && knowledgeIds.length > 0) {
+      const { data: knowledge } = await supabase
+        .from('knowledge_items')
+        .select('category, title, content')
+        .in('id', knowledgeIds.map(k => k.knowledge_id))
+      knowledgeContext = knowledge ?? []
+    } else {
+      // Fallback: use all knowledge for this client
+      const { data: knowledge } = await supabase
+        .from('knowledge_items')
+        .select('category, title, content')
+        .eq('client_id', project.client_id)
+        .limit(10)
+      knowledgeContext = knowledge ?? []
+    }
+
     // Generate letter
     const res = await fetch('/api/generate-letter', {
       method: 'POST',
@@ -245,6 +268,7 @@ export default function ProjectDetailPage() {
         whyYouAngle: project.why_you_angle ?? '採用強化',
         sendTrigger: project.send_trigger ?? '',
         collectedContext: '',
+        knowledgeContext,
       }),
     })
     const data = await res.json()

@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 const navItems = [
   { href: '/', label: 'ダッシュボード', icon: '📊' },
   { href: '/projects', label: 'プロジェクト', icon: '📋' },
+  { href: '/knowledge', label: 'ナレッジ管理', icon: '🧠' },
   { href: '/contacts', label: 'コンタクト管理', icon: '👤' },
   { href: '/letters', label: '手紙一覧', icon: '✉️' },
   { href: '/letters/new', label: '手紙を生成', icon: '✍️' },

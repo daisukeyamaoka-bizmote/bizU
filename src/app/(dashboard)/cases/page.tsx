@@ -23,6 +23,17 @@ type ExtractedCaseStudy = {
   recommended_industries?: string[]
 }
 
+type SourceItem = {
+  id: string
+  type: 'url' | 'file'
+  name: string
+  status: 'pending' | 'extracting' | 'done' | 'error'
+  url?: string
+  file?: File
+  results: ExtractedCaseStudy[]
+  error?: string
+}
+
 export default function CasesPage() {
   const [cases, setCases] = useState<CaseStudyRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,12 +48,12 @@ export default function CasesPage() {
   const [formResultSummary, setFormResultSummary] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Auto-extract state
+  // Multi-source extraction
   const [showExtract, setShowExtract] = useState(false)
-  const [extractUrl, setExtractUrl] = useState('')
+  const [sources, setSources] = useState<SourceItem[]>([])
+  const [urlInput, setUrlInput] = useState('')
   const [extracting, setExtracting] = useState(false)
-  const [extracted, setExtracted] = useState<ExtractedCaseStudy[]>([])
-  const [extractError, setExtractError] = useState('')
+  const [allResults, setAllResults] = useState<ExtractedCaseStudy[]>([])
 
   useEffect(() => {
     loadCases()
@@ -100,61 +111,92 @@ export default function CasesPage() {
     loadCases()
   }
 
-  // URL から自動抽出
-  async function handleExtractFromUrl() {
-    if (!extractUrl.trim()) return
-    setExtracting(true)
-    setExtractError('')
-    setExtracted([])
+  // --- Multi-source extraction ---
 
-    try {
-      const res = await fetch('/api/extract-case-study', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: extractUrl }),
-      })
-      const data = await res.json()
-      if (data.error) {
-        setExtractError(data.error)
-      } else {
-        setExtracted(data.case_studies ?? [])
+  function addUrl() {
+    const trimmed = urlInput.trim()
+    if (!trimmed) return
+    // 複数URLを改行・カンマ・スペースで分割
+    const urls = trimmed.split(/[\n,\s]+/).filter(u => u.startsWith('http'))
+    const newSources: SourceItem[] = urls.map(url => ({
+      id: crypto.randomUUID(),
+      type: 'url',
+      name: url,
+      status: 'pending',
+      url,
+      results: [],
+    }))
+    setSources(prev => [...prev, ...newSources])
+    setUrlInput('')
+  }
+
+  function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files) return
+    const newSources: SourceItem[] = Array.from(files).map(file => ({
+      id: crypto.randomUUID(),
+      type: 'file',
+      name: file.name,
+      status: 'pending',
+      file,
+      results: [],
+    }))
+    setSources(prev => [...prev, ...newSources])
+    e.target.value = ''
+  }
+
+  function removeSource(id: string) {
+    setSources(prev => prev.filter(s => s.id !== id))
+  }
+
+  async function extractAll() {
+    setExtracting(true)
+    const updated = [...sources]
+
+    for (let i = 0; i < updated.length; i++) {
+      const source = updated[i]
+      if (source.status === 'done') continue
+
+      updated[i] = { ...source, status: 'extracting' }
+      setSources([...updated])
+
+      try {
+        let res: Response
+
+        if (source.type === 'url') {
+          res = await fetch('/api/extract-case-study', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: source.url }),
+          })
+        } else {
+          const formData = new FormData()
+          formData.append('file', source.file!)
+          res = await fetch('/api/extract-case-study', {
+            method: 'POST',
+            body: formData,
+          })
+        }
+
+        const data = await res.json()
+        if (data.error) {
+          updated[i] = { ...updated[i], status: 'error', error: data.error }
+        } else {
+          updated[i] = { ...updated[i], status: 'done', results: data.case_studies ?? [] }
+        }
+      } catch {
+        updated[i] = { ...updated[i], status: 'error', error: '通信エラー' }
       }
-    } catch {
-      setExtractError('抽出に失敗しました')
+      setSources([...updated])
     }
+
+    // Collect all results
+    const results = updated.flatMap(s => s.results)
+    setAllResults(results)
     setExtracting(false)
   }
 
-  // ファイルから自動抽出
-  async function handleExtractFromFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setExtracting(true)
-    setExtractError('')
-    setExtracted([])
-
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const res = await fetch('/api/extract-case-study', {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await res.json()
-      if (data.error) {
-        setExtractError(data.error)
-      } else {
-        setExtracted(data.case_studies ?? [])
-      }
-    } catch {
-      setExtractError('抽出に失敗しました')
-    }
-    setExtracting(false)
-  }
-
-  // 抽出結果を一括登録
-  async function handleSaveExtracted(cs: ExtractedCaseStudy) {
+  async function saveResult(cs: ExtractedCaseStudy) {
     const supabase = createClient()
     await supabase.from('case_studies').insert({
       client_id: formClientId,
@@ -165,18 +207,32 @@ export default function CasesPage() {
       recommended_roles: cs.recommended_roles ?? [],
       recommended_industries: cs.recommended_industries ?? [],
     })
-    setExtracted(prev => prev.filter(item => item.company_name !== cs.company_name))
+    setAllResults(prev => prev.filter(item => item !== cs))
     loadCases()
   }
 
-  async function handleSaveAllExtracted() {
-    for (const cs of extracted) {
-      await handleSaveExtracted(cs)
+  async function saveAllResults() {
+    const supabase = createClient()
+    for (const cs of allResults) {
+      await supabase.from('case_studies').insert({
+        client_id: formClientId,
+        company_name: cs.company_name,
+        industry: cs.industry,
+        challenge_tags: cs.challenge_tags,
+        result_summary: cs.result_summary,
+        recommended_roles: cs.recommended_roles ?? [],
+        recommended_industries: cs.recommended_industries ?? [],
+      })
     }
-    setExtracted([])
+    setAllResults([])
+    setSources([])
     setShowExtract(false)
-    setExtractUrl('')
+    loadCases()
   }
+
+  const doneCount = sources.filter(s => s.status === 'done').length
+  const errorCount = sources.filter(s => s.status === 'error').length
+  const pendingCount = sources.filter(s => s.status === 'pending').length
 
   return (
     <div>
@@ -187,7 +243,7 @@ export default function CasesPage() {
             onClick={() => { setShowExtract(!showExtract); setShowForm(false) }}
             className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
           >
-            AI自動抽出
+            AI一括抽出
           </button>
           <button
             onClick={() => { setShowForm(!showForm); setShowExtract(false) }}
@@ -198,12 +254,12 @@ export default function CasesPage() {
         </div>
       </div>
 
-      {/* AI自動抽出パネル */}
+      {/* AI一括抽出パネル */}
       {showExtract && (
         <div className="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">ケーススタディを自動抽出</h2>
+          <h2 className="text-lg font-semibold text-gray-900">ケーススタディ一括抽出</h2>
           <p className="mt-1 text-sm text-gray-500">
-            WebページのURLまたはファイル（PDF・テキスト）からAIが自動でケーススタディ情報を抽出します
+            複数のURL・ファイルをまとめて投入 → AIが自動でケーススタディを抽出します
           </p>
 
           <div className="mt-4">
@@ -219,68 +275,108 @@ export default function CasesPage() {
             </select>
           </div>
 
+          {/* ソース追加 */}
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* URL入力 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">URLから抽出</label>
-              <div className="mt-1 flex gap-2">
-                <input
-                  type="url"
-                  value={extractUrl}
-                  onChange={(e) => setExtractUrl(e.target.value)}
-                  placeholder="https://example.com/case-study"
-                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
-                />
-                <button
-                  onClick={handleExtractFromUrl}
-                  disabled={extracting || !extractUrl.trim()}
-                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                >
-                  {extracting ? '抽出中...' : '抽出'}
-                </button>
-              </div>
+              <label className="block text-sm font-medium text-gray-700">URLを追加（複数可：改行やカンマ区切り）</label>
+              <textarea
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder={"https://example.com/case1\nhttps://example.com/case2"}
+                rows={3}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+              />
+              <button
+                onClick={addUrl}
+                disabled={!urlInput.trim()}
+                className="mt-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              >
+                URLを追加
+              </button>
             </div>
-
-            {/* ファイルアップロード */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">ファイルから抽出</label>
-              <div className="mt-1">
-                <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  {extracting ? '抽出中...' : 'ファイルを選択（PDF・テキスト）'}
-                  <input
-                    type="file"
-                    accept=".pdf,.txt,.csv,.md"
-                    className="hidden"
-                    onChange={handleExtractFromFile}
-                    disabled={extracting}
-                  />
-                </label>
-              </div>
+              <label className="block text-sm font-medium text-gray-700">ファイルを追加（複数選択可）</label>
+              <label className="mt-1 inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                ファイルを選択（PDF・テキスト）
+                <input
+                  type="file"
+                  accept=".pdf,.txt,.csv,.md,.doc,.docx"
+                  multiple
+                  className="hidden"
+                  onChange={addFiles}
+                />
+              </label>
             </div>
           </div>
 
-          {extractError && (
-            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
-              {extractError}
+          {/* ソース一覧 */}
+          {sources.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-700">
+                  ソース: {sources.length}件
+                  {doneCount > 0 && <span className="text-green-600"> ({doneCount}件完了)</span>}
+                  {errorCount > 0 && <span className="text-red-600"> ({errorCount}件エラー)</span>}
+                </p>
+                <button
+                  onClick={() => setSources([])}
+                  className="text-sm text-gray-400 hover:text-gray-600"
+                >
+                  すべてクリア
+                </button>
+              </div>
+              <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                {sources.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                    <span className="text-xs">
+                      {s.status === 'pending' && '⏳'}
+                      {s.status === 'extracting' && '🔄'}
+                      {s.status === 'done' && '✅'}
+                      {s.status === 'error' && '❌'}
+                    </span>
+                    <span className="flex-1 truncate text-sm text-gray-700">{s.name}</span>
+                    {s.status === 'done' && (
+                      <span className="text-xs text-green-600">{s.results.length}件抽出</span>
+                    )}
+                    {s.status === 'error' && (
+                      <span className="text-xs text-red-600">{s.error}</span>
+                    )}
+                    <button
+                      onClick={() => removeSource(s.id)}
+                      className="text-xs text-gray-400 hover:text-red-500"
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={extractAll}
+                disabled={extracting || pendingCount === 0}
+                className="mt-3 rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {extracting ? '抽出中...' : `${pendingCount > 0 ? pendingCount + '件を' : ''}一括抽出する`}
+              </button>
             </div>
           )}
 
           {/* 抽出結果 */}
-          {extracted.length > 0 && (
-            <div className="mt-6">
+          {allResults.length > 0 && (
+            <div className="mt-6 border-t border-gray-200 pt-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">
-                  抽出結果: {extracted.length}件
+                  抽出結果: {allResults.length}件のケーススタディ
                 </h3>
                 <button
-                  onClick={handleSaveAllExtracted}
+                  onClick={saveAllResults}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                 >
                   すべて登録する
                 </button>
               </div>
               <div className="mt-3 space-y-3">
-                {extracted.map((cs, i) => (
+                {allResults.map((cs, i) => (
                   <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-start justify-between">
                       <div>
@@ -296,7 +392,7 @@ export default function CasesPage() {
                         <p className="mt-2 text-sm text-gray-700">{cs.result_summary}</p>
                       </div>
                       <button
-                        onClick={() => handleSaveExtracted(cs)}
+                        onClick={() => saveResult(cs)}
                         className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
                       >
                         登録
