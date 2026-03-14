@@ -62,3 +62,21 @@ export const NEXT_ACTIONS = [
 export const AVAILABILITY_OPTIONS = [
   'public', 'restricted', 'unavailable',
 ] as const
+
+// 課題タグのプリセット（ケーススタディ用）
+export const CHALLENGE_TAG_PRESETS = [
+  '採用工数削減',
+  '面接品質向上',
+  '内定辞退防止',
+  '面接標準化',
+  '候補者体験向上',
+  '録画面接導入',
+  '遠隔地採用強化',
+  'AI分析活用',
+  '採用精度向上',
+  '現場負担軽減',
+  '技術者採用強化',
+  '採用ブランディング',
+  '離職率改善',
+  'オンボーディング改善',
+] as const

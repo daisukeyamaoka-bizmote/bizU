@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { INDUSTRIES } from '@/lib/constants'
+import { INDUSTRIES, CHALLENGE_TAG_PRESETS } from '@/lib/constants'
 
 type CaseStudyRow = {
   id: string
@@ -24,7 +24,7 @@ export default function CasesPage() {
   const [formClientId, setFormClientId] = useState('')
   const [formCompanyName, setFormCompanyName] = useState('')
   const [formIndustry, setFormIndustry] = useState<string>(INDUSTRIES[0])
-  const [formChallengeTags, setFormChallengeTags] = useState('')
+  const [formChallengeTags, setFormChallengeTags] = useState<string[]>([])
   const [formResultSummary, setFormResultSummary] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -74,12 +74,12 @@ export default function CasesPage() {
       client_id: formClientId,
       company_name: formCompanyName,
       industry: formIndustry,
-      challenge_tags: formChallengeTags.split(',').map(t => t.trim()).filter(Boolean),
+      challenge_tags: formChallengeTags,
       result_summary: formResultSummary,
     })
     setShowForm(false)
     setFormCompanyName('')
-    setFormChallengeTags('')
+    setFormChallengeTags([])
     setFormResultSummary('')
     setSaving(false)
     loadCases()
@@ -134,13 +134,35 @@ export default function CasesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">解決課題タグ（カンマ区切り）</label>
-              <input
-                value={formChallengeTags}
-                onChange={(e) => setFormChallengeTags(e.target.value)}
-                placeholder="採用工数削減, 面接品質向上"
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
-              />
+              <label className="block text-sm font-medium text-gray-700">解決課題タグ（クリックで選択）</label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {CHALLENGE_TAG_PRESETS.map((tag) => {
+                  const selected = formChallengeTags.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() =>
+                        setFormChallengeTags(prev =>
+                          selected ? prev.filter(t => t !== tag) : [...prev, tag]
+                        )
+                      }
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        selected
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
+              {formChallengeTags.length > 0 && (
+                <p className="mt-2 text-xs text-gray-500">
+                  選択中: {formChallengeTags.join(', ')}
+                </p>
+              )}
             </div>
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700">効果指標</label>
