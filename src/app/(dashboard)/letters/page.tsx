@@ -41,7 +41,7 @@ const REACTION_COLORS: Record<string, string> = {
   '再送希望': 'bg-amber-50 text-amber-700 border-amber-200',
 }
 
-type SortKey = 'created_at' | 'contact_name' | 'company_name' | 'sent_at' | 'why_you_angle'
+type SortKey = 'created_at' | 'contact_name' | 'company_name' | 'sent_at' | 'why_you_angle' | 'department' | 'title'
 
 export default function LettersPage() {
   const [letters, setLetters] = useState<LetterRow[]>([])
@@ -49,6 +49,7 @@ export default function LettersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [inline, setInline] = useState<InlineReaction | null>(null)
   const [saving, setSaving] = useState(false)
+  const [sendingId, setSendingId] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortAsc, setSortAsc] = useState(false)
 
@@ -66,7 +67,7 @@ export default function LettersPage() {
         clients(name)
       `)
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(200)
 
     const letterIds = data?.map(l => l.id) ?? []
     const { data: reactions } = letterIds.length > 0
@@ -130,6 +131,15 @@ export default function LettersPage() {
     a.download = fileName
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function markAsSent(letterId: string) {
+    setSendingId(letterId)
+    const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
+    await supabase.from('letters').update({ sent_at: today }).eq('id', letterId)
+    setLetters(prev => prev.map(l => l.id === letterId ? { ...l, sent_at: today } : l))
+    setSendingId(null)
   }
 
   function openInlineReaction(letterId: string) {
@@ -200,7 +210,7 @@ export default function LettersPage() {
   const SortHeader = ({ k, label }: { k: SortKey; label: string }) => (
     <th
       onClick={() => handleSort(k)}
-      className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-900 select-none"
+      className="cursor-pointer whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-900 select-none"
     >
       {label}{sortKey === k ? (sortAsc ? ' ↑' : ' ↓') : ''}
     </th>
@@ -222,25 +232,28 @@ export default function LettersPage() {
         <table className="min-w-full divide-y divide-neutral-200">
           <thead className="bg-neutral-50">
             <tr>
-              <SortHeader k="contact_name" label="宛先" />
-              <SortHeader k="company_name" label="会社名" />
-              <SortHeader k="sent_at" label="送付日" />
-              <SortHeader k="why_you_angle" label="切り口" />
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">承認状態</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">反応</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">操作</th>
+              <SortHeader k="company_name" label="企業名" />
+              <SortHeader k="department" label="部署" />
+              <SortHeader k="title" label="役職" />
+              <SortHeader k="contact_name" label="担当名" />
+              <SortHeader k="why_you_angle" label="訴求・切り口" />
+              <SortHeader k="created_at" label="作成日" />
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase text-neutral-500">承認</th>
+              <SortHeader k="sent_at" label="送付" />
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase text-neutral-500">反応</th>
+              <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-medium uppercase text-neutral-500">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
                   読み込み中...
                 </td>
               </tr>
             ) : letters.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
                   手紙がありません
                 </td>
               </tr>
@@ -252,12 +265,14 @@ export default function LettersPage() {
                   isExpanded={expandedId === letter.id}
                   inline={expandedId === letter.id ? inline : null}
                   saving={saving}
+                  sendingId={sendingId}
                   onOpenReaction={() => openInlineReaction(letter.id)}
                   onCloseReaction={closeInline}
                   onSelectType={selectReactionType}
                   onUpdateInline={(updates) => inline && setInline({ ...inline, ...updates })}
                   onSave={saveReaction}
                   onDownloadDocx={() => downloadDocx(letter)}
+                  onMarkAsSent={() => markAsSent(letter.id)}
                 />
               ))
             )}
@@ -273,74 +288,95 @@ function LetterRowWithReaction({
   isExpanded,
   inline,
   saving,
+  sendingId,
   onOpenReaction,
   onCloseReaction,
   onSelectType,
   onUpdateInline,
   onSave,
   onDownloadDocx,
+  onMarkAsSent,
 }: {
   letter: LetterRow
   isExpanded: boolean
   inline: InlineReaction | null
   saving: boolean
+  sendingId: string | null
   onOpenReaction: () => void
   onCloseReaction: () => void
   onSelectType: (type: string) => void
   onUpdateInline: (updates: Partial<InlineReaction>) => void
   onSave: () => void
   onDownloadDocx: () => void
+  onMarkAsSent: () => void
 }) {
   const reactionColor = letter.reaction_type
     ? REACTION_COLORS[letter.reaction_type] ?? 'bg-neutral-100 text-neutral-600'
     : ''
 
+  const createdDate = letter.created_at ? letter.created_at.split('T')[0] : '-'
+
   return (
     <>
       <tr className={`hover:bg-neutral-50 ${isExpanded ? 'bg-neutral-50' : ''}`}>
-        <td className="px-4 py-3 text-sm font-medium text-neutral-900">{letter.contact_name}</td>
-        <td className="px-4 py-3 text-sm text-neutral-600">{letter.company_name}</td>
-        <td className="px-4 py-3 text-sm text-neutral-600">{letter.sent_at ?? '-'}</td>
-        <td className="px-4 py-3 text-sm text-neutral-600">{letter.why_you_angle}</td>
-        <td className="px-4 py-3 text-sm">
+        <td className="px-3 py-3 text-sm font-medium text-neutral-900">{letter.company_name}</td>
+        <td className="px-3 py-3 text-sm text-neutral-600">{letter.department ?? '-'}</td>
+        <td className="px-3 py-3 text-sm text-neutral-600">{letter.title ?? '-'}</td>
+        <td className="px-3 py-3 text-sm font-medium text-neutral-900">{letter.contact_name}</td>
+        <td className="px-3 py-3 text-sm text-neutral-600">{letter.why_you_angle}</td>
+        <td className="whitespace-nowrap px-3 py-3 text-sm text-neutral-600">{createdDate}</td>
+        <td className="px-3 py-3 text-sm">
           {letter.is_approved ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-              承認済み
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              済
             </span>
           ) : (
             <Link
               href={`/letters/${letter.id}/review`}
-              className="rounded-full border border-dashed border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:border-amber-400"
+              className="rounded-full border border-dashed border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:border-amber-400"
             >
               未承認
             </Link>
           )}
         </td>
-        <td className="px-4 py-3 text-sm">
+        <td className="whitespace-nowrap px-3 py-3 text-sm">
+          {letter.sent_at ? (
+            <span className="text-xs text-neutral-600">{letter.sent_at}</span>
+          ) : (
+            <button
+              onClick={onMarkAsSent}
+              disabled={sendingId === letter.id}
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {sendingId === letter.id ? '処理中...' : '送付済みにする'}
+            </button>
+          )}
+        </td>
+        <td className="px-3 py-3 text-sm">
           {letter.reaction_type ? (
-            <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${reactionColor}`}>
+            <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${reactionColor}`}>
               {letter.reaction_type}
             </span>
           ) : (
             <button
               onClick={onOpenReaction}
-              className="rounded-full border border-dashed border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
+              className="rounded-full border border-dashed border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
             >
-              + 反応を記録
+              + 記録
             </button>
           )}
         </td>
-        <td className="px-4 py-3 text-sm">
+        <td className="px-3 py-3 text-sm">
           <div className="flex items-center gap-2">
-            <Link href={`/letters/${letter.id}`} className="text-neutral-900 hover:underline">
+            <Link href={`/letters/${letter.id}`} className="text-xs text-neutral-600 hover:underline">
               詳細
             </Link>
             {letter.body_text && (
               <button
                 onClick={onDownloadDocx}
-                className="rounded bg-neutral-100 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200"
+                className="rounded bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-neutral-800"
               >
-                docx
+                DL
               </button>
             )}
           </div>
@@ -350,9 +386,8 @@ function LetterRowWithReaction({
       {/* インライン反応記録フォーム */}
       {isExpanded && inline && (
         <tr>
-          <td colSpan={7} className="border-b border-neutral-200 bg-neutral-50 px-4 py-4">
+          <td colSpan={10} className="border-b border-neutral-200 bg-neutral-50 px-4 py-4">
             <div className="mx-auto max-w-3xl">
-              {/* Step 1: 反応種別（5択ボタン） */}
               <div>
                 <p className="text-xs font-medium text-neutral-500">反応種別を選択</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -376,7 +411,6 @@ function LetterRowWithReaction({
                 </div>
               </div>
 
-              {/* Step 2: 選択後に詳細フィールド＋保存ボタンが出現 */}
               {inline.reactionType && (
                 <div className="mt-4 space-y-3">
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

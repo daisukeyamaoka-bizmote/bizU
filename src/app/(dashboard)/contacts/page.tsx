@@ -13,9 +13,6 @@ type CompanyRow = {
   revenue_scale: string | null
   website: string | null
   phone: string | null
-  founded_date: string | null
-  fiscal_month: string | null
-  representative_email: string | null
   prefecture: string | null
   lead_count: number
   letter_count: number
@@ -24,6 +21,8 @@ type CompanyRow = {
 
 type SortKey = 'name' | 'industry' | 'employee_scale' | 'revenue_scale' | 'lead_count' | 'letter_count' | 'created_at'
 type SortDir = 'asc' | 'desc'
+
+const PAGE_SIZE = 300
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'name', label: '会社名' },
@@ -80,6 +79,8 @@ function sortCompanies(companies: CompanyRow[], key: SortKey, dir: SortDir): Com
 
 export default function ContactsPage() {
   const [companies, setCompanies] = useState<CompanyRow[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
   const [industryFilter, setIndustryFilter] = useState('')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -89,38 +90,50 @@ export default function ContactsPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [deleteProgress, setDeleteProgress] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
-    loadCompanies()
+    setCurrentPage(1)
   }, [industryFilter, search])
+
+  useEffect(() => {
+    loadCompanies()
+  }, [industryFilter, search, currentPage])
 
   async function loadCompanies() {
     setLoading(true)
     setSelectedIds(new Set())
     const supabase = createClient()
 
+    // Total count
+    let countQuery = supabase
+      .from('target_companies')
+      .select('*', { count: 'exact', head: true })
+    if (industryFilter) countQuery = countQuery.eq('industry', industryFilter)
+    if (search) countQuery = countQuery.ilike('name', `%${search}%`)
+    const { count } = await countQuery
+    setTotalCount(count ?? 0)
+
+    // Paginated data
+    const from = (currentPage - 1) * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+
     let query = supabase
       .from('target_companies')
       .select(`
         id, name, industry, employee_scale, revenue_scale, website, phone,
-        founded_date, fiscal_month, representative_email, prefecture, created_at
+        prefecture, created_at
       `)
       .order('created_at', { ascending: false })
-      .limit(300)
+      .range(from, to)
 
-    if (industryFilter) {
-      query = query.eq('industry', industryFilter)
-    }
-    if (search) {
-      query = query.ilike('name', `%${search}%`)
-    }
+    if (industryFilter) query = query.eq('industry', industryFilter)
+    if (search) query = query.ilike('name', `%${search}%`)
 
     const { data: companyData } = await query
-
     const companyIds = companyData?.map(c => c.id) ?? []
 
-    // Fetch lead counts per company
     const { data: contactData } = companyIds.length > 0
       ? await supabase
           .from('contacts')
@@ -129,7 +142,6 @@ export default function ContactsPage() {
           .in('company_id', companyIds)
       : { data: [] }
 
-    // Fetch letter counts per contact
     const contactIds = contactData?.map(c => c.id) ?? []
     const { data: letterData } = contactIds.length > 0
       ? await supabase
@@ -138,7 +150,6 @@ export default function ContactsPage() {
           .in('contact_id', contactIds)
       : { data: [] }
 
-    // Build counts
     const leadCountMap: Record<string, number> = {}
     const contactToCompany: Record<string, string> = {}
     for (const c of contactData ?? []) {
@@ -164,9 +175,6 @@ export default function ContactsPage() {
       revenue_scale: c.revenue_scale,
       website: c.website,
       phone: c.phone,
-      founded_date: c.founded_date,
-      fiscal_month: c.fiscal_month,
-      representative_email: c.representative_email,
       prefecture: c.prefecture,
       lead_count: leadCountMap[c.id] ?? 0,
       letter_count: letterCountMap[c.id] ?? 0,
@@ -197,26 +205,62 @@ export default function ContactsPage() {
   async function deleteSelected() {
     if (selectedIds.size === 0) return
     setDeleting(true)
+    setDeleteProgress('関連データを確認中...')
     const supabase = createClient()
     const ids = Array.from(selectedIds)
 
-    // Soft delete contacts under these companies
-    await supabase
-      .from('contacts')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .in('company_id', ids)
+    try {
+      // 1. Get all contacts under these companies
+      setDeleteProgress('リードを取得中...')
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('id')
+        .in('company_id', ids)
 
-    // Delete companies
-    const { error } = await supabase
-      .from('target_companies')
-      .delete()
-      .in('id', ids)
+      const contactIds = (contacts ?? []).map(c => c.id)
 
-    if (error) {
-      alert(`削除エラー: ${error.message}`)
+      if (contactIds.length > 0) {
+        // 2. Delete reactions for letters of these contacts
+        setDeleteProgress('反応記録を削除中...')
+        const { data: letters } = await supabase
+          .from('letters')
+          .select('id')
+          .in('contact_id', contactIds)
+        const letterIds = (letters ?? []).map(l => l.id)
+
+        if (letterIds.length > 0) {
+          await supabase.from('reactions').delete().in('letter_id', letterIds)
+        }
+
+        // 3. Delete letters
+        setDeleteProgress('手紙データを削除中...')
+        await supabase.from('letters').delete().in('contact_id', contactIds)
+
+        // 4. Delete project_contacts references
+        setDeleteProgress('プロジェクト紐付けを削除中...')
+        await supabase.from('project_contacts').delete().in('contact_id', contactIds)
+      }
+
+      // 5. Delete contacts
+      setDeleteProgress('リードを削除中...')
+      await supabase.from('contacts').delete().in('company_id', ids)
+
+      // 6. Delete companies
+      setDeleteProgress('取引先を削除中...')
+      const { error } = await supabase
+        .from('target_companies')
+        .delete()
+        .in('id', ids)
+
+      if (error) {
+        alert(`削除エラー: ${error.message}`)
+      }
+    } catch (err) {
+      alert(`削除エラー: ${err instanceof Error ? err.message : String(err)}`)
     }
 
     setDeleting(false)
+    setDeleteProgress('')
     setShowDeleteConfirm(false)
     setSelectedIds(new Set())
     loadCompanies()
@@ -232,6 +276,7 @@ export default function ContactsPage() {
   }
 
   const sorted = sortCompanies(companies, sortKey, sortDir)
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   return (
     <div>
@@ -287,15 +332,14 @@ export default function ContactsPage() {
       </div>
 
       {/* 選択操作バー */}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && !deleting && (
         <div className="mt-3 flex items-center gap-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2">
           <span className="text-sm font-medium text-neutral-700">
             {selectedIds.size}社を選択中
           </span>
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            disabled={deleting}
-            className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700"
           >
             選択した取引先を削除
           </button>
@@ -308,13 +352,21 @@ export default function ContactsPage() {
         </div>
       )}
 
+      {/* 削除中プログレス */}
+      {deleting && (
+        <div className="mt-3 flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+          <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+          <span className="text-sm font-medium text-neutral-700">{deleteProgress}</span>
+        </div>
+      )}
+
       {/* 削除確認モーダル */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-neutral-900">取引先を削除しますか？</h3>
             <p className="mt-2 text-sm text-neutral-600">
-              {selectedIds.size}社の取引先と配下のリードを削除します。
+              {selectedIds.size}社の取引先と配下のリード・手紙・反応記録を完全に削除します。この操作は取り消せません。
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -363,7 +415,6 @@ export default function ContactsPage() {
                 </th>
               ))}
               <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">所在地</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">HP</th>
               <th
                 onClick={() => handleSortChange('lead_count')}
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
@@ -387,13 +438,16 @@ export default function ContactsPage() {
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
-                  読み込み中...
+                <td colSpan={9} className="px-4 py-12 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-400" />
+                    <span className="text-sm text-neutral-500">読み込み中...</span>
+                  </div>
                 </td>
               </tr>
             ) : sorted.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-neutral-500">
                   取引先がありません
                 </td>
               </tr>
@@ -420,13 +474,6 @@ export default function ContactsPage() {
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.employee_scale ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.revenue_scale ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.prefecture ?? '-'}</td>
-                  <td className="px-4 py-3 text-sm text-neutral-600">
-                    {company.website ? (
-                      <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block max-w-[120px]" title={company.website}>
-                        {company.website.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
-                      </a>
-                    ) : '-'}
-                  </td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.lead_count}名</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.letter_count}通</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">
@@ -438,7 +485,44 @@ export default function ContactsPage() {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-neutral-400">{sorted.length}社表示</p>
+
+      {/* ページネーション */}
+      <div className="mt-3 flex items-center justify-between">
+        <p className="text-xs text-neutral-400">
+          全{totalCount}社中 {(currentPage - 1) * PAGE_SIZE + 1}〜{Math.min(currentPage * PAGE_SIZE, totalCount)}社を表示
+        </p>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+            >
+              前へ
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  page === currentPage
+                    ? 'bg-neutral-900 text-white'
+                    : 'border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+            >
+              次へ
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
