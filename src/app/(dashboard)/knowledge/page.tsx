@@ -95,6 +95,10 @@ export default function KnowledgePage() {
   // Folder management
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
   const [editFolderName, setEditFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderClientId, setNewFolderClientId] = useState('')
+  const [movingToFolder, setMovingToFolder] = useState(false)
 
   // Upload state
   const [showUpload, setShowUpload] = useState(false)
@@ -247,6 +251,36 @@ export default function KnowledgePage() {
     if (openFolderId === folderId) setOpenFolderId(null)
     loadFolders()
     loadItems()
+  }
+
+  async function createNewFolder() {
+    if (!newFolderName.trim()) return
+    const clientId = newFolderClientId || (selectedClientId !== 'all' ? selectedClientId : clients[0]?.id)
+    if (!clientId) return
+    const supabase = createClient()
+    const { error } = await supabase.from('knowledge_folders').insert({
+      client_id: clientId,
+      name: newFolderName.trim(),
+    })
+    if (!error) {
+      setNewFolderName('')
+      setCreatingFolder(false)
+      loadFolders()
+    }
+  }
+
+  async function moveItemsToFolder(targetFolderId: string | null) {
+    if (selectedIds.size === 0) return
+    setMovingToFolder(true)
+    const supabase = createClient()
+    await supabase
+      .from('knowledge_items')
+      .update({ folder_id: targetFolderId })
+      .in('id', Array.from(selectedIds))
+    setSelectedIds(new Set())
+    setMovingToFolder(false)
+    loadFolders()
+    loadItems(openFolderId)
   }
 
   // --- Multi-source upload ---
@@ -916,13 +950,32 @@ export default function KnowledgePage() {
         )}
 
         {selectedIds.size > 0 && (
-          <button
-            onClick={deleteSelected}
-            disabled={deleting}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-          >
-            {deleting ? '削除中...' : `${selectedIds.size}件を削除`}
-          </button>
+          <>
+            {/* Move to folder */}
+            <select
+              value=""
+              onChange={(e) => {
+                const val = e.target.value
+                if (val === '__none__') moveItemsToFolder(null)
+                else if (val) moveItemsToFolder(val)
+              }}
+              disabled={movingToFolder}
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700"
+            >
+              <option value="">フォルダに移動...</option>
+              <option value="__none__">未分類に移動</option>
+              {folders.map(f => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={deleteSelected}
+              disabled={deleting}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleting ? '削除中...' : `${selectedIds.size}件を削除`}
+            </button>
+          </>
         )}
       </div>
 
@@ -940,6 +993,53 @@ export default function KnowledgePage() {
       {/* Folder view */}
       {viewMode === 'folders' && !openFolderId && (
         <div className="mt-4 space-y-3">
+          {/* New folder button / form */}
+          {creatingFolder ? (
+            <div className="rounded-lg border border-neutral-300 bg-white p-4">
+              <p className="text-sm font-medium text-neutral-900">新しいフォルダを作成</p>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && createNewFolder()}
+                  placeholder="フォルダ名を入力"
+                  className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+                  autoFocus
+                />
+                <select
+                  value={newFolderClientId || (selectedClientId !== 'all' ? selectedClientId : clients[0]?.id ?? '')}
+                  onChange={(e) => setNewFolderClientId(e.target.value)}
+                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+                >
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={createNewFolder}
+                  disabled={!newFolderName.trim()}
+                  className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  作成
+                </button>
+                <button
+                  onClick={() => { setCreatingFolder(false); setNewFolderName('') }}
+                  className="text-sm text-neutral-400 hover:text-neutral-600"
+                >
+                  キャンセル
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setCreatingFolder(true)}
+              className="w-full rounded-lg border border-dashed border-neutral-300 bg-white p-3 text-center text-sm font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 transition-colors"
+            >
+              + 新しいフォルダを作成
+            </button>
+          )}
+
           {loading ? (
             <p className="text-sm text-neutral-500">読み込み中...</p>
           ) : folders.length === 0 && unfolderedItems.length === 0 ? (
