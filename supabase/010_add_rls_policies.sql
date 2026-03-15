@@ -51,15 +51,16 @@ CREATE POLICY "Allow authenticated full access on knowledge_items"
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 
--- profiles
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow authenticated full access on profiles"
-  ON profiles FOR ALL
-  USING (auth.role() = 'authenticated')
-  WITH CHECK (auth.role() = 'authenticated');
-
--- audit_logs (RLS already enabled in 006, just add policy)
-CREATE POLICY "Allow authenticated full access on audit_logs"
-  ON audit_logs FOR ALL
-  USING (auth.role() = 'authenticated')
-  WITH CHECK (auth.role() = 'authenticated');
+-- NOTE: profiles and audit_logs tables are created in 006_add_approval_and_profiles.sql
+-- If that migration has been applied, run the following separately:
+--
+-- ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY "Allow authenticated full access on profiles"
+--   ON profiles FOR ALL
+--   USING (auth.role() = 'authenticated')
+--   WITH CHECK (auth.role() = 'authenticated');
+--
+-- CREATE POLICY "Allow authenticated full access on audit_logs"
+--   ON audit_logs FOR ALL
+--   USING (auth.role() = 'authenticated')
+--   WITH CHECK (auth.role() = 'authenticated');
