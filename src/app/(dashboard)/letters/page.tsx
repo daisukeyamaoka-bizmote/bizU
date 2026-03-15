@@ -74,8 +74,9 @@ export default function LettersPage() {
       .limit(200)
 
     if (e1) {
+      console.error('[letters] Full query failed:', e1.message)
       // Fallback: use only base schema columns
-      const { data: d2 } = await supabase
+      const { data: d2, error: e2 } = await supabase
         .from('letters')
         .select(`
           id, sent_at, why_you_angle, body_text, created_at,
@@ -84,10 +85,14 @@ export default function LettersPage() {
         `)
         .order('created_at', { ascending: false })
         .limit(200)
+      if (e2) {
+        console.error('[letters] Fallback query also failed:', e2.message)
+      }
       data = d2
     } else {
       data = d1
     }
+    console.log('[letters] Loaded', data?.length ?? 0, 'letters')
 
     const letterIds = data?.map(l => l.id) ?? []
     const { data: reactions } = letterIds.length > 0

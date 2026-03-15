@@ -44,6 +44,7 @@ export default function NewLetterPage() {
   const [generatingPhase, setGeneratingPhase] = useState('')
   const [collectingInfo, setCollectingInfo] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     loadClients()
@@ -154,18 +155,30 @@ export default function NewLetterPage() {
       setGeneratingProgress(95)
       setGeneratingPhase('完了処理中...')
 
-      const data = await res.json()
-      setGeneratingProgress(100)
-      setGeneratedLetter(data.letter ?? '')
-      setGeneratedTitle(data.title ?? '')
-      setGeneratedSources(data.sources ?? null)
-      notify('手紙生成完了', `${selectedContact.full_name}宛の手紙が生成されました`)
-    } catch {
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error('[generate-letter] API error:', res.status, errText)
+        setGeneratedLetter(`生成に失敗しました (${res.status})`)
+        setToast('手紙生成に失敗しました')
+        notify('手紙生成エラー', `API error: ${res.status}`)
+      } else {
+        const data = await res.json()
+        console.log('[generate-letter] Success, letter length:', data.letter?.length)
+        setGeneratingProgress(100)
+        setGeneratedLetter(data.letter ?? '')
+        setGeneratedTitle(data.title ?? '')
+        setGeneratedSources(data.sources ?? null)
+        setToast('手紙が生成されました')
+        notify('手紙生成完了', `${selectedContact.full_name}宛の手紙が生成されました`)
+      }
+    } catch (err) {
+      console.error('[generate-letter] Exception:', err)
       clearInterval(progressInterval)
       clearTimeout(phaseTimeout1)
       clearTimeout(phaseTimeout2)
       clearTimeout(phaseTimeout3)
       setGeneratedLetter('生成に失敗しました。')
+      setToast('手紙生成に失敗しました')
       notify('手紙生成エラー', '生成に失敗しました')
     }
     setGenerating(false)
@@ -252,8 +265,23 @@ export default function NewLetterPage() {
     URL.revokeObjectURL(url)
   }
 
+  // Auto-dismiss toast after 5 seconds
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 5000)
+    return () => clearTimeout(t)
+  }, [toast])
+
   return (
     <div>
+      {/* Toast notification (fallback when desktop notifications are blocked) */}
+      {toast && (
+        <div className="fixed right-4 top-4 z-50 animate-pulse rounded-lg bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
+          {toast}
+          <button onClick={() => setToast(null)} className="ml-3 text-neutral-400 hover:text-white">✕</button>
+        </div>
+      )}
       <h1 className="text-2xl font-bold text-neutral-900">手紙を生成する</h1>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
