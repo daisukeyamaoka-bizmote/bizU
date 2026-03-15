@@ -25,9 +25,7 @@ export default function NewLetterPage() {
   const router = useRouter()
   const { requestPermission, notify } = useNotification()
 
-  useEffect(() => {
-    requestPermission()
-  }, [requestPermission])
+  // requestPermission is called on user gesture (generate button click) instead of useEffect
 
   const [contacts, setContacts] = useState<Contact[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -104,6 +102,8 @@ export default function NewLetterPage() {
 
   async function generateLetter() {
     if (!selectedContact || !selectedClient) return
+    // Request notification permission on user gesture (button click)
+    requestPermission()
     setGenerating(true)
     setGeneratingProgress(0)
     setGeneratingPhase('ナレッジを取得中...')
@@ -176,7 +176,8 @@ export default function NewLetterPage() {
   async function saveLetter() {
     if (!selectedContact || !generatedLetter) return
     const supabase = createClient()
-    const { data: savedLetter } = await supabase.from('letters').insert({
+
+    const insertData: Record<string, unknown> = {
       client_id: selectedClient,
       contact_id: selectedContact.id,
       why_you_angle: whyYouAngle === 'その他' ? customAngle : whyYouAngle,
@@ -184,7 +185,36 @@ export default function NewLetterPage() {
       body_text: generatedLetter,
       hypothesis: generatedTitle || null,
       sources: generatedSources,
-    }).select('id').single()
+    }
+
+    let savedLetter: { id: string } | null = null
+
+    // Try full insert first
+    const { data: d1, error: e1 } = await supabase
+      .from('letters')
+      .insert(insertData)
+      .select('id')
+      .single()
+
+    if (e1) {
+      // Fallback: remove columns that may not exist yet
+      delete insertData.hypothesis
+      delete insertData.sources
+      const { data: d2, error: e2 } = await supabase
+        .from('letters')
+        .insert(insertData)
+        .select('id')
+        .single()
+
+      if (e2) {
+        alert(`手紙の保存に失敗しました: ${e2.message}`)
+        return
+      }
+      savedLetter = d2
+    } else {
+      savedLetter = d1
+    }
+
     setSaved(true)
     await downloadDocx()
     if (savedLetter?.id) {
