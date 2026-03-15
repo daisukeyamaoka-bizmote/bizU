@@ -26,7 +26,7 @@ type Lead = {
   department: string | null
   title: string | null
   role_level: string
-  email: string | null
+  address: string | null
   created_at: string
   letter_count: number
   last_sent: string | null
@@ -58,7 +58,7 @@ export default function CompanyDetailPage() {
 
     const { data: contactData } = await supabase
       .from('contacts')
-      .select('id, full_name, department, title, role_level, email, created_at')
+      .select('id, full_name, department, title, role_level, address, created_at')
       .eq('company_id', companyId)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
@@ -80,7 +80,7 @@ export default function CompanyDetailPage() {
         department: c.department,
         title: c.title,
         role_level: c.role_level,
-        email: c.email ?? null,
+        address: c.address ?? null,
         created_at: c.created_at,
         letter_count: letters.length,
         last_sent: sorted[0]?.sent_at ?? null,
@@ -277,7 +277,7 @@ export default function CompanyDetailPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">氏名</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">部署</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">役職</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">メール</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">住所</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">送付数</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">最終送付</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">登録日</th>
@@ -307,7 +307,7 @@ export default function CompanyDetailPage() {
                     <td className="px-4 py-3 text-sm font-medium text-neutral-900">{lead.full_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-neutral-600">{lead.department ?? '-'}</td>
                     <td className="px-4 py-3 text-sm text-neutral-600">{lead.title ?? lead.role_level}</td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">{lead.email ?? '-'}</td>
+                    <td className="px-4 py-3 text-sm text-neutral-600 max-w-[200px] truncate">{lead.address ?? '-'}</td>
                     <td className="px-4 py-3 text-sm text-neutral-600">{lead.letter_count}通</td>
                     <td className="px-4 py-3 text-sm text-neutral-600">{lead.last_sent ?? '-'}</td>
                     <td className="px-4 py-3 text-sm text-neutral-600">
