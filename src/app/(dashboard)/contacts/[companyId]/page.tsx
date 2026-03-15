@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -236,7 +237,7 @@ export default function CompanyDetailPage() {
         )}
 
         {/* 削除確認モーダル */}
-        {showDeleteConfirm && (
+        {showDeleteConfirm && typeof document !== 'undefined' && createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
               <h3 className="text-lg font-semibold text-neutral-900">リードを削除しますか？</h3>
@@ -259,7 +260,8 @@ export default function CompanyDetailPage() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200 bg-white">

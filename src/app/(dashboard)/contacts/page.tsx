@@ -18,6 +18,7 @@ type CompanyRow = {
   lead_count: number
   letter_count: number
   created_at: string
+  lead_names: string[]
 }
 
 type SortKey = 'name' | 'industry' | 'employee_scale' | 'revenue_scale' | 'lead_count' | 'letter_count' | 'created_at'
@@ -52,15 +53,22 @@ function sortCompanies(companies: CompanyRow[], key: SortKey, dir: SortDir): Com
         cmp = (a.industry ?? '').localeCompare(b.industry ?? '', 'ja')
         break
       case 'employee_scale': {
-        const aOrd = EMPLOYEE_ORDER[a.employee_scale ?? ''] ?? 999
-        const bOrd = EMPLOYEE_ORDER[b.employee_scale ?? ''] ?? 999
-        cmp = aOrd - bOrd
+        // null values pushed to bottom
+        if (!a.employee_scale && !b.employee_scale) { cmp = 0; break }
+        if (!a.employee_scale) { return 1 }
+        if (!b.employee_scale) { return -1 }
+        const aOrd = EMPLOYEE_ORDER[a.employee_scale] ?? 999
+        const bOrd = EMPLOYEE_ORDER[b.employee_scale] ?? 999
+        cmp = aOrd !== bOrd ? aOrd - bOrd : a.employee_scale.localeCompare(b.employee_scale, 'ja')
         break
       }
       case 'revenue_scale': {
-        const aOrd = REVENUE_ORDER[a.revenue_scale ?? ''] ?? 999
-        const bOrd = REVENUE_ORDER[b.revenue_scale ?? ''] ?? 999
-        cmp = aOrd - bOrd
+        if (!a.revenue_scale && !b.revenue_scale) { cmp = 0; break }
+        if (!a.revenue_scale) { return 1 }
+        if (!b.revenue_scale) { return -1 }
+        const aOrd = REVENUE_ORDER[a.revenue_scale] ?? 999
+        const bOrd = REVENUE_ORDER[b.revenue_scale] ?? 999
+        cmp = aOrd !== bOrd ? aOrd - bOrd : a.revenue_scale.localeCompare(b.revenue_scale, 'ja')
         break
       }
       case 'lead_count':
@@ -102,7 +110,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     loadCompanies()
-  }, [industryFilter, search, currentPage])
+  }, [industryFilter, search, currentPage, sortKey, sortDir])
 
   async function loadCompanies() {
     setLoading(true)
@@ -129,13 +137,18 @@ export default function ContactsPage() {
     const from = (currentPage - 1) * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
+    // Server-side sort for DB columns
+    const dbSortColumns: SortKey[] = ['name', 'industry', 'employee_scale', 'revenue_scale', 'created_at']
+    const serverSort = dbSortColumns.includes(sortKey) ? sortKey : 'created_at'
+    const serverAsc = dbSortColumns.includes(sortKey) ? sortDir === 'asc' : false
+
     let query = supabase
       .from('target_companies')
       .select(`
         id, name, industry, employee_scale, revenue_scale, website, phone,
         prefecture, created_at
       `)
-      .order('created_at', { ascending: false })
+      .order(serverSort, { ascending: serverAsc })
       .range(from, to)
 
     if (industryFilter) query = query.eq('industry', industryFilter)
@@ -147,7 +160,7 @@ export default function ContactsPage() {
     const { data: contactData } = companyIds.length > 0
       ? await supabase
           .from('contacts')
-          .select('id, company_id')
+          .select('id, company_id, full_name, department')
           .eq('is_active', true)
           .in('company_id', companyIds)
       : { data: [] }
@@ -161,11 +174,17 @@ export default function ContactsPage() {
       : { data: [] }
 
     const leadCountMap: Record<string, number> = {}
+    const leadNamesMap: Record<string, string[]> = {}
     const contactToCompany: Record<string, string> = {}
     for (const c of contactData ?? []) {
       if (c.company_id) {
         leadCountMap[c.company_id] = (leadCountMap[c.company_id] ?? 0) + 1
         contactToCompany[c.id] = c.company_id
+        if (c.full_name) {
+          const label = c.department ? `${c.full_name}(${c.department})` : c.full_name
+          if (!leadNamesMap[c.company_id]) leadNamesMap[c.company_id] = []
+          leadNamesMap[c.company_id].push(label)
+        }
       }
     }
 
@@ -189,6 +208,7 @@ export default function ContactsPage() {
       lead_count: leadCountMap[c.id] ?? 0,
       letter_count: letterCountMap[c.id] ?? 0,
       created_at: c.created_at,
+      lead_names: leadNamesMap[c.id] ?? [],
     }))
 
     setCompanies(mapped)
@@ -470,6 +490,7 @@ export default function ContactsPage() {
               >
                 リード数 {sortKey === 'lead_count' && (sortDir === 'asc' ? '↑' : '↓')}
               </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500">リード情報</th>
               <th
                 onClick={() => handleSortChange('letter_count')}
                 className="cursor-pointer px-4 py-3 text-left text-xs font-medium uppercase text-neutral-500 hover:text-neutral-700"
@@ -487,7 +508,7 @@ export default function ContactsPage() {
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center">
+                <td colSpan={10} className="px-4 py-12 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-400" />
                     <span className="text-sm text-neutral-500">読み込み中...</span>
@@ -496,7 +517,7 @@ export default function ContactsPage() {
               </tr>
             ) : sorted.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-neutral-500">
                   取引先がありません
                 </td>
               </tr>
@@ -524,6 +545,14 @@ export default function ContactsPage() {
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.revenue_scale ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.prefecture ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.lead_count}名</td>
+                  <td className="px-4 py-3 text-sm text-neutral-600 max-w-[200px]">
+                    {company.lead_names.length > 0 ? (
+                      <span className="truncate block" title={company.lead_names.join(', ')}>
+                        {company.lead_names.slice(0, 2).join(', ')}
+                        {company.lead_names.length > 2 && ` 他${company.lead_names.length - 2}名`}
+                      </span>
+                    ) : '-'}
+                  </td>
                   <td className="px-4 py-3 text-sm text-neutral-600">{company.letter_count}通</td>
                   <td className="px-4 py-3 text-sm text-neutral-600">
                     {company.created_at ? new Date(company.created_at).toLocaleDateString('ja-JP') : '-'}
