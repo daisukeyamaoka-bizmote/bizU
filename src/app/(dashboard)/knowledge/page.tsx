@@ -129,53 +129,63 @@ export default function KnowledgePage() {
   }
 
   async function loadFolders() {
-    const supabase = createClient()
-    let query = supabase
-      .from('knowledge_folders')
-      .select('id, name, client_id, description, created_at')
-      .order('created_at', { ascending: false })
+    try {
+      const supabase = createClient()
+      let query = supabase
+        .from('knowledge_folders')
+        .select('id, name, client_id, description, created_at')
+        .order('created_at', { ascending: false })
 
-    if (selectedClientId !== 'all') {
-      query = query.eq('client_id', selectedClientId)
-    }
-
-    const { data: foldersData } = await query
-
-    // Get client names
-    const clientIds = [...new Set((foldersData ?? []).map(f => f.client_id).filter(Boolean))]
-    const { data: clientsData } = clientIds.length > 0
-      ? await supabase.from('clients').select('id, name').in('id', clientIds as string[])
-      : { data: [] }
-    const clientMap = new Map((clientsData ?? []).map(c => [c.id, c.name]))
-
-    // Get item counts per folder
-    const folderIds = (foldersData ?? []).map(f => f.id)
-    let itemCounts = new Map<string, number>()
-    if (folderIds.length > 0) {
-      const { data: countData } = await supabase
-        .from('knowledge_items')
-        .select('folder_id')
-        .in('folder_id', folderIds)
-
-      const counts: Record<string, number> = {}
-      for (const row of (countData ?? [])) {
-        if (row.folder_id) {
-          counts[row.folder_id] = (counts[row.folder_id] ?? 0) + 1
-        }
+      if (selectedClientId !== 'all') {
+        query = query.eq('client_id', selectedClientId)
       }
-      itemCounts = new Map(Object.entries(counts))
-    }
 
-    const mapped: KnowledgeFolder[] = (foldersData ?? []).map(f => ({
-      id: f.id,
-      name: f.name,
-      client_id: f.client_id,
-      client_name: clientMap.get(f.client_id ?? '') ?? '-',
-      description: f.description,
-      created_at: f.created_at,
-      item_count: itemCounts.get(f.id) ?? 0,
-    }))
-    setFolders(mapped)
+      const { data: foldersData, error } = await query
+      if (error) {
+        // Table may not exist yet - switch to list view
+        setViewMode('list')
+        return
+      }
+
+      // Get client names
+      const clientIds = [...new Set((foldersData ?? []).map(f => f.client_id).filter(Boolean))]
+      const { data: clientsData } = clientIds.length > 0
+        ? await supabase.from('clients').select('id, name').in('id', clientIds as string[])
+        : { data: [] }
+      const clientMap = new Map((clientsData ?? []).map(c => [c.id, c.name]))
+
+      // Get item counts per folder
+      const folderIds = (foldersData ?? []).map(f => f.id)
+      let itemCounts = new Map<string, number>()
+      if (folderIds.length > 0) {
+        const { data: countData } = await supabase
+          .from('knowledge_items')
+          .select('folder_id')
+          .in('folder_id', folderIds)
+
+        const counts: Record<string, number> = {}
+        for (const row of (countData ?? [])) {
+          if (row.folder_id) {
+            counts[row.folder_id] = (counts[row.folder_id] ?? 0) + 1
+          }
+        }
+        itemCounts = new Map(Object.entries(counts))
+      }
+
+      const mapped: KnowledgeFolder[] = (foldersData ?? []).map(f => ({
+        id: f.id,
+        name: f.name,
+        client_id: f.client_id,
+        client_name: clientMap.get(f.client_id ?? '') ?? '-',
+        description: f.description,
+        created_at: f.created_at,
+        item_count: itemCounts.get(f.id) ?? 0,
+      }))
+      setFolders(mapped)
+    } catch {
+      // Folder table not available yet - use list view
+      setViewMode('list')
+    }
   }
 
   async function loadItems(folderId?: string | null) {
@@ -458,30 +468,55 @@ export default function KnowledgePage() {
     let savedCount = 0
     const errors: string[] = []
 
-    // Create folder for this import batch
+    // Try to create folder for this import batch
     const autoFolderName = folderName.trim() || `インポート ${new Date().toLocaleDateString('ja-JP')} ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`
-    const { data: folder } = await supabase.from('knowledge_folders').insert({
-      client_id: uploadClientId,
-      name: autoFolderName,
-      description: sourceInfos.map(s => s.name).join(', '),
-    }).select('id').single()
+    let folderId: string | null = null
+    let folderSupported = true
 
-    const folderId = folder?.id ?? null
+    try {
+      const { data: folder, error: folderError } = await supabase.from('knowledge_folders').insert({
+        client_id: uploadClientId,
+        name: autoFolderName,
+        description: sourceInfos.map(s => s.name).join(', '),
+      }).select('id').single()
+
+      if (folderError) {
+        // knowledge_folders table may not exist yet
+        folderSupported = false
+      } else {
+        folderId = folder?.id ?? null
+      }
+    } catch {
+      folderSupported = false
+    }
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       const sourceInfo = sourceInfos[i] ?? sourceInfos[0]
 
-      const { error: kiError } = await supabase.from('knowledge_items').insert({
+      // Build insert payload - include folder_id only if supported
+      const insertData: Record<string, unknown> = {
         client_id: uploadClientId,
-        folder_id: folderId,
         category: item.category,
         title: item.title,
         content: item.content,
         source_type: sourceInfo?.type ?? 'manual',
         source_name: sourceInfo?.name ?? null,
         tags: item.tags,
-      })
+      }
+      if (folderSupported && folderId) {
+        insertData.folder_id = folderId
+      }
+
+      let { error: kiError } = await supabase.from('knowledge_items').insert(insertData)
+
+      // If folder_id column doesn't exist, retry without it
+      if (kiError && kiError.message.includes('folder_id')) {
+        folderSupported = false
+        delete insertData.folder_id
+        const retry = await supabase.from('knowledge_items').insert(insertData)
+        kiError = retry.error
+      }
 
       if (kiError) {
         errors.push(`「${item.title}」の保存に失敗: ${kiError.message}`)
