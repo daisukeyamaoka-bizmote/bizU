@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INDUSTRIES, EMPLOYEE_SCALES, REVENUE_SCALES } from '@/lib/constants'
@@ -88,6 +89,8 @@ export default function ContactsPage() {
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
+  const [totalLeadCount, setTotalLeadCount] = useState(0)
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [deleteProgress, setDeleteProgress] = useState('')
@@ -114,6 +117,13 @@ export default function ContactsPage() {
     if (search) countQuery = countQuery.ilike('name', `%${search}%`)
     const { count } = await countQuery
     setTotalCount(count ?? 0)
+
+    // Total lead count
+    const { count: leadCount } = await supabase
+      .from('contacts')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true)
+    setTotalLeadCount(leadCount ?? 0)
 
     // Paginated data
     const from = (currentPage - 1) * PAGE_SIZE
@@ -200,6 +210,10 @@ export default function ContactsPage() {
     } else {
       setSelectedIds(new Set(sorted.map(c => c.id)))
     }
+  }
+
+  const selectCount = (count: number) => {
+    setSelectedIds(new Set(sorted.slice(0, count).map(c => c.id)))
   }
 
   async function deleteSelected() {
@@ -290,6 +304,40 @@ export default function ContactsPage() {
         </Link>
       </div>
 
+      {/* 総数サマリー */}
+      <div className="mt-3 flex items-center gap-6">
+        <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-4 py-2">
+          <span className="text-sm text-neutral-500">総取引先数</span>
+          <span className="text-lg font-bold text-neutral-900">{totalCount.toLocaleString()}社</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-4 py-2">
+          <span className="text-sm text-neutral-500">総リード数</span>
+          <span className="text-lg font-bold text-neutral-900">{totalLeadCount.toLocaleString()}名</span>
+        </div>
+
+        {/* 一括選択 */}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-neutral-500">一括選択:</span>
+          {[300, 500, 1000].map(n => (
+            <button
+              key={n}
+              onClick={() => selectCount(n)}
+              disabled={sorted.length === 0}
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+            >
+              {n}社
+            </button>
+          ))}
+          <button
+            onClick={toggleSelectAll}
+            disabled={sorted.length === 0}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-30"
+          >
+            全選択
+          </button>
+        </div>
+      </div>
+
       {/* フィルター & ソート */}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <select
@@ -360,8 +408,8 @@ export default function ContactsPage() {
         </div>
       )}
 
-      {/* 削除確認モーダル */}
-      {showDeleteConfirm && (
+      {/* 削除確認モーダル - createPortalでbodyに直接描画し、transformの影響を回避 */}
+      {showDeleteConfirm && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-neutral-900">取引先を削除しますか？</h3>
@@ -384,7 +432,8 @@ export default function ContactsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* テーブル */}
