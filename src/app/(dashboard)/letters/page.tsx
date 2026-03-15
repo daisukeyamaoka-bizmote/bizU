@@ -60,7 +60,10 @@ export default function LettersPage() {
 
   async function loadLetters() {
     const supabase = createClient()
-    const { data } = await supabase
+
+    // Try with hypothesis column first, fallback without it
+    let data = null
+    const { data: d1, error: e1 } = await supabase
       .from('letters')
       .select(`
         id, sent_at, why_you_angle, is_approved, approved_by, body_text, hypothesis, created_at,
@@ -69,6 +72,21 @@ export default function LettersPage() {
       `)
       .order('created_at', { ascending: false })
       .limit(200)
+
+    if (e1 && e1.message.includes('hypothesis')) {
+      const { data: d2 } = await supabase
+        .from('letters')
+        .select(`
+          id, sent_at, why_you_angle, is_approved, approved_by, body_text, created_at,
+          contacts(full_name, department, title, target_companies(name)),
+          clients(name)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      data = d2
+    } else {
+      data = d1
+    }
 
     const letterIds = data?.map(l => l.id) ?? []
     const { data: reactions } = letterIds.length > 0
@@ -223,12 +241,6 @@ export default function LettersPage() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">手紙一覧</h1>
-        <Link
-          href="/projects"
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-        >
-          + 新規生成
-        </Link>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
