@@ -61,7 +61,7 @@ export default function LettersPage() {
   async function loadLetters() {
     const supabase = createClient()
 
-    // Try with hypothesis column first, fallback without it
+    // Try full query first, fallback to minimal columns on any error
     let data = null
     const { data: d1, error: e1 } = await supabase
       .from('letters')
@@ -73,11 +73,12 @@ export default function LettersPage() {
       .order('created_at', { ascending: false })
       .limit(200)
 
-    if (e1 && e1.message.includes('hypothesis')) {
+    if (e1) {
+      // Fallback: use only base schema columns
       const { data: d2 } = await supabase
         .from('letters')
         .select(`
-          id, sent_at, why_you_angle, is_approved, approved_by, body_text, created_at,
+          id, sent_at, why_you_angle, body_text, created_at,
           contacts(full_name, department, title, target_companies(name)),
           clients(name)
         `)
@@ -96,7 +97,8 @@ export default function LettersPage() {
           .in('letter_id', letterIds)
       : { data: [] }
 
-    const mapped: LetterRow[] = (data ?? []).map((l) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mapped: LetterRow[] = (data ?? []).map((l: any) => {
       const contact = Array.isArray(l.contacts) ? l.contacts[0] : l.contacts
       const company = contact && 'target_companies' in contact
         ? (Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies)
@@ -106,14 +108,14 @@ export default function LettersPage() {
       return {
         id: l.id,
         contact_name: contact?.full_name ?? '-',
-        company_name: (company as { name: string } | null)?.name ?? '-',
+        company_name: company?.name ?? '-',
         department: contact?.department ?? null,
         title: contact?.title ?? null,
-        client_name: (clientObj as { name: string } | null)?.name ?? '',
+        client_name: clientObj?.name ?? '',
         body_text: l.body_text ?? '',
-        hypothesis: (l as Record<string, unknown>).hypothesis as string | null ?? null,
-        sent_at: l.sent_at,
-        why_you_angle: l.why_you_angle,
+        hypothesis: l.hypothesis ?? null,
+        sent_at: l.sent_at ?? null,
+        why_you_angle: l.why_you_angle ?? '',
         reaction_type: reaction?.reaction_type ?? null,
         reaction_id: reaction?.id ?? null,
         is_approved: l.is_approved ?? false,
