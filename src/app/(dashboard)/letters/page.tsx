@@ -53,6 +53,7 @@ export default function LettersPage() {
   const [sendingId, setSendingId] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortAsc, setSortAsc] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadLetters()
@@ -74,7 +75,7 @@ export default function LettersPage() {
       .limit(200)
 
     if (e1) {
-      console.error('[letters] Full query failed:', e1.message)
+      console.error('[letters] Full query failed:', e1.message, e1.code, e1.details)
       // Fallback: use only base schema columns
       const { data: d2, error: e2 } = await supabase
         .from('letters')
@@ -86,7 +87,8 @@ export default function LettersPage() {
         .order('created_at', { ascending: false })
         .limit(200)
       if (e2) {
-        console.error('[letters] Fallback query also failed:', e2.message)
+        console.error('[letters] Fallback query also failed:', e2.message, e2.code)
+        setError(`データ取得に失敗しました: ${e2.message}`)
       }
       data = d2
     } else {
@@ -249,6 +251,16 @@ export default function LettersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">手紙一覧</h1>
       </div>
+
+      {error && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-medium">エラー</p>
+          <p className="mt-1">{error}</p>
+          <p className="mt-2 text-xs text-red-500">
+            RLSポリシーが未設定の可能性があります。Supabase SQL Editorで010_add_rls_policies.sqlを実行してください。
+          </p>
+        </div>
+      )}
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="min-w-full divide-y divide-neutral-200">

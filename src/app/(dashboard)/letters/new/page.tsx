@@ -44,7 +44,8 @@ export default function NewLetterPage() {
   const [generatingPhase, setGeneratingPhase] = useState('')
   const [collectingInfo, setCollectingInfo] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [generationComplete, setGenerationComplete] = useState(false)
 
   useEffect(() => {
     loadClients()
@@ -108,6 +109,7 @@ export default function NewLetterPage() {
     setGenerating(true)
     setGeneratingProgress(0)
     setGeneratingPhase('ナレッジを取得中...')
+    setGenerationComplete(false)
 
     const client = clients.find(c => c.id === selectedClient)
 
@@ -159,16 +161,18 @@ export default function NewLetterPage() {
         const errText = await res.text()
         console.error('[generate-letter] API error:', res.status, errText)
         setGeneratedLetter(`生成に失敗しました (${res.status})`)
-        setToast('手紙生成に失敗しました')
+        setToast({ message: '手紙生成に失敗しました', type: 'error' })
         notify('手紙生成エラー', `API error: ${res.status}`)
       } else {
         const data = await res.json()
         console.log('[generate-letter] Success, letter length:', data.letter?.length)
         setGeneratingProgress(100)
+        setGeneratingPhase('生成完了!')
+        setGenerationComplete(true)
         setGeneratedLetter(data.letter ?? '')
         setGeneratedTitle(data.title ?? '')
         setGeneratedSources(data.sources ?? null)
-        setToast('手紙が生成されました')
+        setToast({ message: `${selectedContact.full_name}宛の手紙が生成されました!`, type: 'success' })
         notify('手紙生成完了', `${selectedContact.full_name}宛の手紙が生成されました`)
       }
     } catch (err) {
@@ -178,12 +182,10 @@ export default function NewLetterPage() {
       clearTimeout(phaseTimeout2)
       clearTimeout(phaseTimeout3)
       setGeneratedLetter('生成に失敗しました。')
-      setToast('手紙生成に失敗しました')
+      setToast({ message: '手紙生成に失敗しました', type: 'error' })
       notify('手紙生成エラー', '生成に失敗しました')
     }
     setGenerating(false)
-    setGeneratingProgress(0)
-    setGeneratingPhase('')
   }
 
   async function saveLetter() {
@@ -210,6 +212,15 @@ export default function NewLetterPage() {
       .single()
 
     if (e1) {
+      console.error('[saveLetter] Insert error:', e1.message, e1.code, e1.details)
+      // Check for RLS-related errors
+      if (e1.code === '42501' || e1.message.includes('policy') || e1.message.includes('RLS') || e1.code === 'PGRST301') {
+        setToast({
+          message: '保存に失敗: RLSポリシーが未設定です。Supabaseの管理画面でRLSポリシーを追加してください。',
+          type: 'error'
+        })
+        return
+      }
       // Fallback: remove columns that may not exist yet
       delete insertData.hypothesis
       delete insertData.sources
@@ -220,7 +231,11 @@ export default function NewLetterPage() {
         .single()
 
       if (e2) {
-        alert(`手紙の保存に失敗しました: ${e2.message}`)
+        console.error('[saveLetter] Fallback insert error:', e2.message, e2.code)
+        setToast({
+          message: `手紙の保存に失敗しました: ${e2.message}`,
+          type: 'error'
+        })
         return
       }
       savedLetter = d2
@@ -229,6 +244,7 @@ export default function NewLetterPage() {
     }
 
     setSaved(true)
+    setToast({ message: '手紙を保存しました!', type: 'success' })
     await downloadDocx()
     if (savedLetter?.id) {
       router.push(`/letters/${savedLetter.id}/review`)
@@ -265,21 +281,25 @@ export default function NewLetterPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Auto-dismiss toast after 5 seconds
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Auto-dismiss toast after 5 seconds (errors stay longer)
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(() => setToast(null), 5000)
+    const duration = toast.type === 'error' ? 10000 : 5000
+    const t = setTimeout(() => setToast(null), duration)
     return () => clearTimeout(t)
   }, [toast])
 
   return (
     <div>
-      {/* Toast notification (fallback when desktop notifications are blocked) */}
+      {/* Toast notification */}
       {toast && (
-        <div className="fixed right-4 top-4 z-50 animate-pulse rounded-lg bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
-          {toast}
-          <button onClick={() => setToast(null)} className="ml-3 text-neutral-400 hover:text-white">✕</button>
+        <div className={`fixed right-4 top-4 z-50 rounded-lg px-4 py-3 text-sm shadow-lg ${
+          toast.type === 'error'
+            ? 'bg-red-600 text-white'
+            : 'bg-emerald-600 text-white'
+        }`}>
+          {toast.message}
+          <button onClick={() => setToast(null)} className="ml-3 opacity-70 hover:opacity-100">✕</button>
         </div>
       )}
       <h1 className="text-2xl font-bold text-neutral-900">手紙を生成する</h1>
@@ -428,27 +448,44 @@ export default function NewLetterPage() {
           </button>
         )}
 
-        {generating && (
-          <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-6">
+        {(generating || generationComplete) && (
+          <div className={`mt-4 rounded-lg border p-6 ${
+            generationComplete
+              ? 'border-emerald-200 bg-emerald-50'
+              : 'border-neutral-200 bg-neutral-50'
+          }`}>
             <div className="flex items-center gap-3">
-              <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-900" />
-              <p className="text-sm font-medium text-neutral-700">{generatingPhase}</p>
+              {generationComplete ? (
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs font-bold">
+                  ✓
+                </div>
+              ) : (
+                <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-neutral-900" />
+              )}
+              <p className={`text-sm font-medium ${generationComplete ? 'text-emerald-700' : 'text-neutral-700'}`}>
+                {generatingPhase}
+              </p>
             </div>
             <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
               <span>{generatingProgress}%</span>
               <span>
-                {generatingProgress < 30 ? '残り約30秒' :
+                {generationComplete ? '完了' :
+                 generatingProgress < 30 ? '残り約30秒' :
                  generatingProgress < 60 ? '残り約20秒' :
                  generatingProgress < 85 ? '残り約10秒' : 'もうすぐ完了'}
               </span>
             </div>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
               <div
-                className="h-full rounded-full bg-neutral-900 transition-all duration-500 ease-out"
+                className={`h-full rounded-full transition-all duration-500 ease-out ${
+                  generationComplete ? 'bg-emerald-500' : 'bg-neutral-900'
+                }`}
                 style={{ width: `${generatingProgress}%` }}
               />
             </div>
-            <p className="mt-3 text-xs text-neutral-400">Opusモデルで高品質な手紙を生成しています。30〜40秒ほどかかります。</p>
+            {!generationComplete && (
+              <p className="mt-3 text-xs text-neutral-400">Sonnetモデルで手紙を生成しています。20〜30秒ほどかかります。</p>
+            )}
           </div>
         )}
 

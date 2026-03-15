@@ -169,7 +169,7 @@ bizmote株式会社
 代表取締役 山岡大輔`
 
     const response = await callClaude({
-      model: 'claude-opus-4-20250514',
+      model: 'claude-sonnet-4-20250514',
       system: SYSTEM_PROMPT,
       max_tokens: 4096,
       messages: [
