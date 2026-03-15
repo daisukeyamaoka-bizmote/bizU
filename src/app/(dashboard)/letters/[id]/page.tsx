@@ -16,8 +16,7 @@ export default async function LetterDetailPage({
     .select(`
       *,
       contacts(full_name, department, title, target_companies(name)),
-      clients(name, product_name),
-      case_studies(company_name, challenge_tags, result_summary)
+      clients(name, product_name)
     `)
     .eq('id', id)
     .single()
@@ -32,7 +31,6 @@ export default async function LetterDetailPage({
 
   const contact = Array.isArray(letter.contacts) ? letter.contacts[0] : letter.contacts
   const client = Array.isArray(letter.clients) ? letter.clients[0] : letter.clients
-  const caseStudy = Array.isArray(letter.case_studies) ? letter.case_studies[0] : letter.case_studies
   const company = contact && 'target_companies' in contact
     ? (Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies)
     : null
@@ -77,14 +75,6 @@ export default async function LetterDetailPage({
             <p className="mt-1 text-sm text-neutral-900">切り口: {letter.why_you_angle}</p>
             <p className="text-sm text-neutral-900">トリガー: {letter.send_trigger ?? '-'}</p>
           </div>
-          {caseStudy && (
-            <div className="rounded-lg border border-neutral-200 bg-white p-4">
-              <h3 className="text-sm font-semibold text-neutral-500">ケーススタディ</h3>
-              <p className="mt-1 text-sm text-neutral-900">{caseStudy.company_name}</p>
-              <p className="text-xs text-neutral-600">{caseStudy.challenge_tags?.join(', ')}</p>
-              <p className="text-xs text-neutral-600">{caseStudy.result_summary}</p>
-            </div>
-          )}
         </div>
 
         {/* 手紙本文 */}

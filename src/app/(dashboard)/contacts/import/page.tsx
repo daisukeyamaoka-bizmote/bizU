@@ -605,7 +605,7 @@ export default function SmartImportPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">リストインポート</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">取引先・リードインポート</h1>
         <a
           href="/api/import-template"
           className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
@@ -628,6 +628,7 @@ export default function SmartImportPage() {
       {step === 1 && (
         <div className="mt-6">
           <h2 className="text-lg font-semibold text-neutral-900">STEP 1: ファイルをアップロード</h2>
+          <p className="mt-1 text-sm text-neutral-500">会社情報は「取引先」、担当者情報は「リード」として自動的に分割・登録されます</p>
           <div className="mt-4 flex items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 bg-white p-12">
             <div className="text-center">
               <p className="text-sm text-neutral-600">Excel・CSVをドラッグ&ドロップ</p>

@@ -248,22 +248,12 @@ export default function ProjectDetailPage() {
       knowledgeContext = knowledge ?? []
     }
 
-    // クライアント・ケーススタディ取得
+    // クライアント取得
     const { data: client } = await supabase
       .from('clients')
       .select('id, name, product_name')
       .eq('id', project.client_id)
       .single()
-
-    let caseStudy = null
-    if (project.case_study_id) {
-      const { data } = await supabase
-        .from('case_studies')
-        .select('company_name, challenge_tags, result_summary')
-        .eq('id', project.case_study_id)
-        .single()
-      caseStudy = data
-    }
 
     for (let i = 0; i < targets.length; i++) {
       const pc = targets[i]
@@ -330,7 +320,6 @@ export default function ProjectDetailPage() {
               address: contact.address,
             },
             client,
-            caseStudy,
             whyYouAngle: project.why_you_angle ?? '採用強化',
             sendTrigger: project.send_trigger ?? '',
             collectedContext: deepResearch?.companyResearch ?? '',
@@ -344,7 +333,6 @@ export default function ProjectDetailPage() {
           const { data: letter } = await supabase.from('letters').insert({
             client_id: project.client_id,
             contact_id: pc.contact_id,
-            case_study_id: project.case_study_id,
             project_id: projectId,
             why_you_angle: project.why_you_angle ?? '採用強化',
             send_trigger: project.send_trigger ?? null,

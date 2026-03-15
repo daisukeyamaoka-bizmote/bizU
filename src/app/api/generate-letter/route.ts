@@ -47,7 +47,7 @@ const SYSTEM_PROMPT = `あなたはBtoB営業のプロフェッショナルで�
 【重要】
 提供されたナレッジ情報がある場合、その内容を活用して手紙の説得力を高めてください。
 - プロダクト情報 → ソリューションの具体的な説明に活用
-- 導入事例 → 最も宛先企業に近い業種・課題の事例を選んで使用
+- 導入事例 → 最も宛先企業に近い業種・課題の事例を選んで第3段落のケーススタディとして使用。どの企業でどんな課題をどう解決し、どんな成果が出たかを具体的に記載
 - 営業資料 → 説得力のあるフレーズや数値を活用
 - 市場動向 → 課題仮説の裏付けに活用
 
@@ -63,7 +63,6 @@ export async function POST(request: Request) {
     const {
       contact,
       client,
-      caseStudy,
       whyYouAngle,
       sendTrigger,
       collectedContext,
@@ -111,11 +110,6 @@ ${whyYouAngle}
 
 【送付トリガー】
 ${sendTrigger || '特になし'}
-
-【使用するケーススタディ】
-企業名: ${caseStudy?.company_name ?? ''}
-解決した課題: ${caseStudy?.challenge_tags?.join(', ') ?? ''}
-成果: ${caseStudy?.result_summary ?? ''}
 
 【提供するソリューション】
 クライアント: ${client?.name ?? ''}

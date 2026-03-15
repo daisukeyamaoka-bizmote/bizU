@@ -374,21 +374,7 @@ export default function KnowledgePage() {
 
       savedCount++
 
-      if (item.category === 'case_study' && item.case_study && ki) {
-        const { data: cs } = await supabase.from('case_studies').insert({
-          client_id: uploadClientId,
-          company_name: item.case_study.company_name,
-          industry: item.case_study.industry,
-          challenge_tags: item.case_study.challenge_tags,
-          result_summary: item.case_study.result_summary,
-        }).select('id').single()
-
-        if (cs) {
-          await supabase.from('knowledge_items')
-            .update({ case_study_id: cs.id })
-            .eq('id', ki.id)
-        }
-      }
+      // 事例情報はナレッジとして一元管理（case_studiesテーブルへの別途保存は不要）
     }
 
     if (errors.length > 0) {

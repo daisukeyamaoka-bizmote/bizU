@@ -10,9 +10,7 @@ import {
   BookOpen,
   Users,
   EnvelopeSimple,
-  ChartBar,
   TrendUp,
-  ChartLineUp,
   GearSix,
   SignOut,
 } from '@phosphor-icons/react'
@@ -23,9 +21,7 @@ const navItems = [
   { href: '/knowledge', label: 'ナレッジ', icon: BookOpen },
   { href: '/projects', label: '手紙作成', icon: FolderSimple },
   { href: '/letters', label: '手紙一覧', icon: EnvelopeSimple },
-  { href: '/cases', label: 'ケーススタディ', icon: ChartBar },
   { href: '/reactions', label: '反応記録', icon: TrendUp },
-  { href: '/dashboard/intelligence', label: 'インテリジェンス', icon: ChartLineUp },
   { href: '/settings/users', label: 'ユーザー管理', icon: GearSix },
 ]
 

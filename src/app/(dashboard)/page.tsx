@@ -33,14 +33,18 @@ export default async function DashboardPage() {
   const deals = dealCount ?? 0
   const reactionRate = sent > 0 ? ((reactions / sent) * 100).toFixed(1) : '0.0'
 
+  // データ資産カウント
+  const { count: totalSentCount } = await supabase.from('letters').select('*', { count: 'exact', head: true }).not('sent_at', 'is', null)
+  const { count: totalCompanyCount } = await supabase.from('target_companies').select('*', { count: 'exact', head: true })
+  const totalSent = totalSentCount ?? 0
+  const totalCompanies = totalCompanyCount ?? 0
+
   // ===== インテリジェンスサマリー =====
-  // 全期間の手紙＋反応データを取得してクライアントサイドで集計
   const { data: allLetters } = await supabase
     .from('letters')
     .select(`
-      id, why_you_angle, send_trigger, case_study_id, sent_at,
-      contacts(company_id),
-      case_studies(company_name)
+      id, why_you_angle, send_trigger, sent_at,
+      contacts(company_id)
     `)
     .not('sent_at', 'is', null)
 
@@ -91,15 +95,6 @@ export default async function DashboardPage() {
 
   // トリガー別反応率トップ3
   const triggerRanking = computeRanking((l) => l.send_trigger)
-
-  // 事例別商談化率トップ3
-  const caseStudyRanking = computeRanking(
-    (l) => {
-      const cs = Array.isArray(l.case_studies) ? l.case_studies[0] : l.case_studies
-      return cs?.company_name ?? null
-    },
-    (t) => t === '商談化',
-  )
 
   // 業種別反応率トップ3
   const industryRanking = computeRanking((l) => {
@@ -163,15 +158,11 @@ export default async function DashboardPage() {
       {/* インテリジェンスサマリー */}
       <div className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-neutral-900">インテリジェンスサマリー</h2>
-          <Link href="/dashboard/intelligence" className="text-sm text-neutral-500 hover:underline">
-            詳細を見る &rarr;
-          </Link>
+          <h2 className="text-lg font-semibold text-neutral-900">インテリジェンス</h2>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <RankingCard title="Why You別 反応率" items={whyYouRanking} suffix="%" />
           <RankingCard title="トリガー別 反応率" items={triggerRanking} suffix="%" />
-          <RankingCard title="事例別 商談化率" items={caseStudyRanking} suffix="%" />
           <RankingCard title="業種別 反応率" items={industryRanking} suffix="%" />
         </div>
       </div>
@@ -227,7 +218,55 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* データ資産 */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold text-neutral-900">データ資産</h2>
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
+            <p className="text-2xl font-bold text-neutral-900">{totalSent}通</p>
+            <p className="mt-1 text-xs text-neutral-500">送付累計</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
+            <p className="text-2xl font-bold text-neutral-900">{totalCompanies}社</p>
+            <p className="mt-1 text-xs text-neutral-500">取引先数</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
+            <p className="text-2xl font-bold text-neutral-900">{reactions}件</p>
+            <p className="mt-1 text-xs text-neutral-500">反応累計</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
+            <p className="text-2xl font-bold text-neutral-900">{deals}件</p>
+            <p className="mt-1 text-xs text-neutral-500">商談化累計</p>
+          </div>
+        </div>
+      </div>
+
+      {/* CSVエクスポート */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold text-neutral-900">CSVエクスポート</h2>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <ExportLink type="contacts" label="コンタクトリスト" description="Salesforce/HubSpotインポート用" />
+          <ExportLink type="letters" label="手紙履歴" description="CRM活動履歴追記用" />
+          <ExportLink type="reactions" label="反応記録" description="SFA商談フェーズ更新用" />
+          <ExportLink type="analytics" label="分析用フルエクスポート" description="BIツール・AI分析用" />
+        </div>
+      </div>
+
     </div>
+  )
+}
+
+function ExportLink({ type, label, description }: { type: string; label: string; description: string }) {
+  return (
+    <a
+      href={`/api/export?type=${type}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex flex-col items-start rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left hover:bg-neutral-50"
+    >
+      <span className="text-sm font-medium text-neutral-900">{label}</span>
+      <span className="mt-0.5 text-xs text-neutral-500">{description}</span>
+    </a>
   )
 }
 

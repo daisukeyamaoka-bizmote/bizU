@@ -21,14 +21,6 @@ type Client = {
   product_name: string | null
 }
 
-type CaseStudy = {
-  id: string
-  company_name: string
-  challenge_tags: string[]
-  result_summary: string
-  recommended: boolean
-}
-
 export default function NewLetterPage() {
   const router = useRouter()
   const { requestPermission, notify } = useNotification()
@@ -39,13 +31,11 @@ export default function NewLetterPage() {
 
   const [contacts, setContacts] = useState<Contact[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([])
   const [contactSearch, setContactSearch] = useState('')
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [selectedClient, setSelectedClient] = useState<string>('')
   const [whyYouAngle, setWhyYouAngle] = useState<string>(WHY_YOU_ANGLES[0])
   const [customAngle, setCustomAngle] = useState('')
-  const [selectedCaseStudy, setSelectedCaseStudy] = useState<string>('')
   const [collectedContext, setCollectedContext] = useState('')
   const [generatedLetter, setGeneratedLetter] = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,10 +50,6 @@ export default function NewLetterPage() {
     loadClients()
   }, [])
 
-  useEffect(() => {
-    if (selectedClient) loadCaseStudies()
-  }, [selectedClient])
-
   async function loadClients() {
     const supabase = createClient()
     const { data } = await supabase
@@ -72,25 +58,6 @@ export default function NewLetterPage() {
       .eq('status', 'active')
     setClients(data ?? [])
     if (data?.[0]) setSelectedClient(data[0].id)
-  }
-
-  async function loadCaseStudies() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('case_studies')
-      .select('id, company_name, challenge_tags, result_summary, recommended_roles, recommended_industries')
-      .eq('client_id', selectedClient)
-      .eq('availability', 'public')
-
-    const mapped: CaseStudy[] = (data ?? []).map((cs) => ({
-      id: cs.id,
-      company_name: cs.company_name,
-      challenge_tags: cs.challenge_tags,
-      result_summary: cs.result_summary,
-      recommended: false,
-    }))
-    setCaseStudies(mapped)
-    if (mapped[0]) setSelectedCaseStudy(mapped[0].id)
   }
 
   async function searchContacts() {
@@ -135,27 +102,26 @@ export default function NewLetterPage() {
   }
 
   async function generateLetter() {
-    if (!selectedContact || !selectedClient || !selectedCaseStudy) return
+    if (!selectedContact || !selectedClient) return
     setGenerating(true)
     setGeneratingProgress(0)
     setGeneratingPhase('ナレッジを取得中...')
 
-    const caseStudy = caseStudies.find(cs => cs.id === selectedCaseStudy)
     const client = clients.find(c => c.id === selectedClient)
 
-    // ナレッジコンテキストを取得
+    // ナレッジコンテキストを取得（事例情報含む）
     const supabase = createClient()
     const { data: knowledge } = await supabase
       .from('knowledge_items')
       .select('category, title, content')
       .eq('client_id', selectedClient)
-      .limit(10)
+      .limit(20)
     const knowledgeContext = knowledge ?? []
 
     setGeneratingProgress(10)
     setGeneratingPhase('AIが手紙を作成中...')
 
-    // プログレスアニメーション（API応答まで10%→85%を段階的に進行）
+    // プログレスアニメーション
     const progressInterval = setInterval(() => {
       setGeneratingProgress(prev => {
         if (prev >= 85) { clearInterval(progressInterval); return 85 }
@@ -163,7 +129,6 @@ export default function NewLetterPage() {
       })
     }, 500)
 
-    // フェーズテキストを段階的に更新
     const phaseTimeout1 = setTimeout(() => setGeneratingPhase('企業情報を分析中...'), 5000)
     const phaseTimeout2 = setTimeout(() => setGeneratingPhase('パーソナライズ文面を構成中...'), 15000)
     const phaseTimeout3 = setTimeout(() => setGeneratingPhase('文章を推敲中...'), 25000)
@@ -175,7 +140,6 @@ export default function NewLetterPage() {
         body: JSON.stringify({
           contact: selectedContact,
           client,
-          caseStudy,
           whyYouAngle: whyYouAngle === 'その他' ? customAngle : whyYouAngle,
           sendTrigger: '',
           collectedContext,
@@ -213,16 +177,13 @@ export default function NewLetterPage() {
     const { data: savedLetter } = await supabase.from('letters').insert({
       client_id: selectedClient,
       contact_id: selectedContact.id,
-      case_study_id: selectedCaseStudy,
       why_you_angle: whyYouAngle === 'その他' ? customAngle : whyYouAngle,
       collected_context: collectedContext,
       body_text: generatedLetter,
       sources: generatedSources,
     }).select('id').single()
     setSaved(true)
-    // 保存後に自動でdocxダウンロード
     await downloadDocx()
-    // 手紙一覧のレビューページへ遷移
     if (savedLetter?.id) {
       router.push(`/letters/${savedLetter.id}/review`)
     } else {
@@ -382,37 +343,10 @@ export default function NewLetterPage() {
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-neutral-700">使用ケーススタディ</label>
-              <div className="mt-2 space-y-2">
-                {caseStudies.length === 0 ? (
-                  <p className="text-sm text-neutral-500">ケーススタディがありません</p>
-                ) : (
-                  caseStudies.map((cs) => (
-                    <label
-                      key={cs.id}
-                      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
-                        selectedCaseStudy === cs.id
-                          ? 'border-neutral-300 bg-neutral-50'
-                          : 'border-neutral-200 hover:bg-neutral-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="caseStudy"
-                        checked={selectedCaseStudy === cs.id}
-                        onChange={() => setSelectedCaseStudy(cs.id)}
-                        className="mt-1"
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-neutral-900">{cs.company_name}</p>
-                        <p className="text-xs text-neutral-500">{cs.challenge_tags.join(', ')}</p>
-                        <p className="text-xs text-neutral-500">{cs.result_summary}</p>
-                      </div>
-                    </label>
-                  ))
-                )}
-              </div>
+            <div className="rounded-lg bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">
+                ナレッジに登録された事例情報・プロダクト情報・営業資料を自動的に活用して手紙を生成します。
+              </p>
             </div>
           </div>
         </div>
