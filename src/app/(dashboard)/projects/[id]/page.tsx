@@ -259,12 +259,12 @@ export default function ProjectDetailPage() {
       const pc = targets[i]
       setPipelineCurrentIdx(i + 1)
 
-      // Step 1: 企業リサーチ
-      updateProgress(pc.contact_id, 'company', '企業IR・中計を調査中...')
+      // Step 1: 役職確認（最重要）
+      updateProgress(pc.contact_id, 'company', '役職の最新情報を確認中...')
 
       let deepResearch = null
       try {
-        // Step 2: 人物リサーチ（進捗表示を更新）
+        // Deep Research API実行（内部で5ステップ: 役職確認→企業リサーチ→人物リサーチ→適合性分析→WhyYou）
         const researchPromise = fetch('/api/deep-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -277,12 +277,14 @@ export default function ProjectDetailPage() {
           }),
         })
 
-        // 進捗をシミュレーション表示（実際のAPIは内部で4ステップ実行）
-        await delay(2000)
-        updateProgress(pc.contact_id, 'person', '担当者の人事異動・記事を調査中...')
-        await delay(2000)
-        updateProgress(pc.contact_id, 'fit', 'プロダクト適合性を分析中...')
-        await delay(2000)
+        // 進捗をシミュレーション表示（実際のAPIは内部で5ステップ実行）
+        await delay(3000)
+        updateProgress(pc.contact_id, 'company', '企業の中計・採用体制を調査中...')
+        await delay(3000)
+        updateProgress(pc.contact_id, 'person', '担当者のインタビュー・講演情報を調査中...')
+        await delay(3000)
+        updateProgress(pc.contact_id, 'fit', 'プロダクト適合性・事例選定を分析中...')
+        await delay(3000)
         updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
 
         const researchRes = await researchPromise
@@ -337,6 +339,7 @@ export default function ProjectDetailPage() {
             why_you_angle: project.why_you_angle ?? '採用強化',
             send_trigger: project.send_trigger ?? null,
             body_text: data.letter,
+            hypothesis: data.title ?? null,
             collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
             sources: data.sources ?? null,
           }).select('id').single()

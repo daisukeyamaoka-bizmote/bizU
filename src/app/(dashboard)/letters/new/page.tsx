@@ -38,6 +38,7 @@ export default function NewLetterPage() {
   const [customAngle, setCustomAngle] = useState('')
   const [collectedContext, setCollectedContext] = useState('')
   const [generatedLetter, setGeneratedLetter] = useState('')
+  const [generatedTitle, setGeneratedTitle] = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [generatedSources, setGeneratedSources] = useState<any[] | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -156,6 +157,7 @@ export default function NewLetterPage() {
       const data = await res.json()
       setGeneratingProgress(100)
       setGeneratedLetter(data.letter ?? '')
+      setGeneratedTitle(data.title ?? '')
       setGeneratedSources(data.sources ?? null)
       notify('手紙生成完了', `${selectedContact.full_name}宛の手紙が生成されました`)
     } catch {
@@ -180,6 +182,7 @@ export default function NewLetterPage() {
       why_you_angle: whyYouAngle === 'その他' ? customAngle : whyYouAngle,
       collected_context: collectedContext,
       body_text: generatedLetter,
+      hypothesis: generatedTitle || null,
       sources: generatedSources,
     }).select('id').single()
     setSaved(true)
@@ -202,6 +205,7 @@ export default function NewLetterPage() {
         contact: selectedContact,
         clientName: client?.name ?? '',
         bodyText: generatedLetter,
+        title: generatedTitle,
       }),
     })
     const blob = await res.blob()

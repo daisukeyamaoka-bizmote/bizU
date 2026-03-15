@@ -31,6 +31,7 @@ const VERDICT_CONFIG = {
 type Letter = {
   id: string
   body_text: string
+  hypothesis: string | null
   sources: Source[] | null
   is_approved: boolean
   approved_by: string | null
@@ -82,7 +83,7 @@ export default function ReviewPage() {
     const { data } = await supabase
       .from('letters')
       .select(`
-        id, body_text, sources, is_approved, approved_by, approved_at,
+        id, body_text, hypothesis, sources, is_approved, approved_by, approved_at,
         why_you_angle, send_trigger,
         contacts(full_name, department, title, target_companies(name)),
         clients(name, product_name)
@@ -270,6 +271,7 @@ export default function ReviewPage() {
         },
         clientName: letter.clients?.name ?? '',
         bodyText: letter.body_text,
+        title: letter.hypothesis ?? '',
       }),
     })
 

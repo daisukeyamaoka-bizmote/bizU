@@ -13,6 +13,7 @@ type LetterRow = {
   title: string | null
   client_name: string
   body_text: string
+  hypothesis: string | null
   sent_at: string | null
   why_you_angle: string
   reaction_type: string | null
@@ -62,7 +63,7 @@ export default function LettersPage() {
     const { data } = await supabase
       .from('letters')
       .select(`
-        id, sent_at, why_you_angle, is_approved, approved_by, body_text, created_at,
+        id, sent_at, why_you_angle, is_approved, approved_by, body_text, hypothesis, created_at,
         contacts(full_name, department, title, target_companies(name)),
         clients(name)
       `)
@@ -92,6 +93,7 @@ export default function LettersPage() {
         title: contact?.title ?? null,
         client_name: (clientObj as { name: string } | null)?.name ?? '',
         body_text: l.body_text ?? '',
+        hypothesis: (l as Record<string, unknown>).hypothesis as string | null ?? null,
         sent_at: l.sent_at,
         why_you_angle: l.why_you_angle,
         reaction_type: reaction?.reaction_type ?? null,
@@ -119,6 +121,7 @@ export default function LettersPage() {
         },
         clientName: letter.client_name,
         bodyText: letter.body_text,
+        title: letter.hypothesis ?? '',
       }),
     })
     const blob = await res.blob()
