@@ -4,6 +4,16 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useNotification } from '@/lib/useNotification'
 
+type KnowledgeFolder = {
+  id: string
+  name: string
+  client_id: string
+  client_name: string
+  description: string | null
+  created_at: string
+  item_count: number
+}
+
 type KnowledgeItem = {
   id: string
   category: string
@@ -13,6 +23,7 @@ type KnowledgeItem = {
   source_name: string | null
   tags: string[] | null
   client_name: string
+  folder_id: string | null
   created_at: string
 }
 
@@ -39,7 +50,7 @@ type SourceItem = {
   results: ExtractedItem[]
   sourceType?: string
   error?: string
-  stage?: 'uploading' | 'analyzing' | 'extracting'
+  stage?: 'uploading' | 'analyzing' | 'extracting' | 'crawling'
   progress?: number
 }
 
@@ -47,6 +58,7 @@ const STAGE_LABELS: Record<string, string> = {
   uploading: 'アップロード中',
   analyzing: 'AI分析中',
   extracting: 'ナレッジ抽出中',
+  crawling: '子ページをクロール中',
 }
 
 const CATEGORY_LABELS: Record<string, { text: string; color: string }> = {
@@ -65,6 +77,10 @@ export default function KnowledgePage() {
     requestPermission()
   }, [requestPermission])
 
+  // View mode: 'folders' or 'list'
+  const [viewMode, setViewMode] = useState<'folders' | 'list'>('folders')
+  const [folders, setFolders] = useState<KnowledgeFolder[]>([])
+  const [openFolderId, setOpenFolderId] = useState<string | null>(null)
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
@@ -76,9 +92,15 @@ export default function KnowledgePage() {
   const [sortKey, setSortKey] = useState<'created_at' | 'title' | 'category' | 'source_name'>('created_at')
   const [sortAsc, setSortAsc] = useState(false)
 
+  // Folder management
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
+  const [editFolderName, setEditFolderName] = useState('')
+
   // Upload state
   const [showUpload, setShowUpload] = useState(false)
   const [uploadClientId, setUploadClientId] = useState('')
+  const [folderName, setFolderName] = useState('')
+  const [deepCrawl, setDeepCrawl] = useState(false)
   const [sources, setSources] = useState<SourceItem[]>([])
   const [urlInput, setUrlInput] = useState('')
   const [extracting, setExtracting] = useState(false)
@@ -90,10 +112,12 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     loadClients()
+    loadFolders()
     loadItems()
   }, [])
 
   useEffect(() => {
+    loadFolders()
     loadItems()
   }, [selectedClientId, categoryFilter, sortKey, sortAsc])
 
@@ -104,11 +128,61 @@ export default function KnowledgePage() {
     if (data?.[0]) setUploadClientId(data[0].id)
   }
 
-  async function loadItems() {
+  async function loadFolders() {
+    const supabase = createClient()
+    let query = supabase
+      .from('knowledge_folders')
+      .select('id, name, client_id, description, created_at')
+      .order('created_at', { ascending: false })
+
+    if (selectedClientId !== 'all') {
+      query = query.eq('client_id', selectedClientId)
+    }
+
+    const { data: foldersData } = await query
+
+    // Get client names
+    const clientIds = [...new Set((foldersData ?? []).map(f => f.client_id).filter(Boolean))]
+    const { data: clientsData } = clientIds.length > 0
+      ? await supabase.from('clients').select('id, name').in('id', clientIds as string[])
+      : { data: [] }
+    const clientMap = new Map((clientsData ?? []).map(c => [c.id, c.name]))
+
+    // Get item counts per folder
+    const folderIds = (foldersData ?? []).map(f => f.id)
+    let itemCounts = new Map<string, number>()
+    if (folderIds.length > 0) {
+      const { data: countData } = await supabase
+        .from('knowledge_items')
+        .select('folder_id')
+        .in('folder_id', folderIds)
+
+      const counts: Record<string, number> = {}
+      for (const row of (countData ?? [])) {
+        if (row.folder_id) {
+          counts[row.folder_id] = (counts[row.folder_id] ?? 0) + 1
+        }
+      }
+      itemCounts = new Map(Object.entries(counts))
+    }
+
+    const mapped: KnowledgeFolder[] = (foldersData ?? []).map(f => ({
+      id: f.id,
+      name: f.name,
+      client_id: f.client_id,
+      client_name: clientMap.get(f.client_id ?? '') ?? '-',
+      description: f.description,
+      created_at: f.created_at,
+      item_count: itemCounts.get(f.id) ?? 0,
+    }))
+    setFolders(mapped)
+  }
+
+  async function loadItems(folderId?: string | null) {
     const supabase = createClient()
     let query = supabase
       .from('knowledge_items')
-      .select('id, category, title, content, source_type, source_name, tags, client_id, created_at')
+      .select('id, category, title, content, source_type, source_name, tags, client_id, folder_id, created_at')
       .order(sortKey, { ascending: sortAsc })
 
     if (selectedClientId !== 'all') {
@@ -116,6 +190,9 @@ export default function KnowledgePage() {
     }
     if (categoryFilter !== 'all') {
       query = query.eq('category', categoryFilter)
+    }
+    if (folderId) {
+      query = query.eq('folder_id', folderId)
     }
 
     const { data } = await query
@@ -135,10 +212,31 @@ export default function KnowledgePage() {
       source_name: k.source_name,
       tags: k.tags,
       client_name: clientMap.get(k.client_id ?? '') ?? '-',
+      folder_id: k.folder_id,
       created_at: k.created_at,
     }))
     setItems(mapped)
     setLoading(false)
+  }
+
+  // --- Folder actions ---
+  async function renameFolder(folderId: string) {
+    if (!editFolderName.trim()) return
+    const supabase = createClient()
+    await supabase.from('knowledge_folders').update({ name: editFolderName.trim() }).eq('id', folderId)
+    setEditingFolderId(null)
+    loadFolders()
+  }
+
+  async function deleteFolder(folderId: string) {
+    if (!confirm('このフォルダを削除しますか？中のナレッジは「未分類」に移動されます。')) return
+    const supabase = createClient()
+    // Move items to no folder
+    await supabase.from('knowledge_items').update({ folder_id: null }).eq('folder_id', folderId)
+    await supabase.from('knowledge_folders').delete().eq('id', folderId)
+    if (openFolderId === folderId) setOpenFolderId(null)
+    loadFolders()
+    loadItems()
   }
 
   // --- Multi-source upload ---
@@ -179,9 +277,9 @@ export default function KnowledgePage() {
 
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const startProgressAnimation = useCallback((index: number, stage: 'uploading' | 'analyzing' | 'extracting', startPct: number, endPct: number) => {
+  const startProgressAnimation = useCallback((index: number, stage: 'uploading' | 'analyzing' | 'extracting' | 'crawling', startPct: number, endPct: number) => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
-    const duration = stage === 'analyzing' ? 20000 : 3000
+    const duration = stage === 'analyzing' ? 20000 : stage === 'crawling' ? 30000 : 3000
     const stepMs = 200
     const steps = duration / stepMs
     const increment = (endPct - startPct) / steps
@@ -206,7 +304,7 @@ export default function KnowledgePage() {
       return fetch('/api/extract-knowledge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: source.url }),
+        body: JSON.stringify({ url: source.url, deepCrawl }),
       })
     } else {
       const formData = new FormData()
@@ -232,11 +330,9 @@ export default function KnowledgePage() {
       const source = updated[i]
       if (source.status === 'done') continue
 
-      // ファイル間に待機を入れてレート制限を回避
       if (processedCount > 0) {
         updated[i] = { ...source, status: 'extracting', stage: 'uploading', progress: 0 }
         setSources([...updated])
-        // 前のファイル処理後に5秒待機
         await sleep(5000)
       }
 
@@ -250,14 +346,25 @@ export default function KnowledgePage() {
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-          // Stage 2: AI Analyzing (15-85%)
-          updated[i] = { ...updated[i], stage: 'analyzing', progress: 15 }
-          setSources([...updated])
-          startProgressAnimation(i, 'analyzing', 15, 85)
+          // If deep crawl + URL, show crawling stage
+          if (deepCrawl && source.type === 'url') {
+            updated[i] = { ...updated[i], stage: 'crawling', progress: 15 }
+            setSources([...updated])
+            startProgressAnimation(i, 'crawling', 15, 50)
+
+            // Wait a bit then switch to analyzing
+            await sleep(3000)
+            updated[i] = { ...updated[i], stage: 'analyzing', progress: 50 }
+            setSources([...updated])
+            startProgressAnimation(i, 'analyzing', 50, 85)
+          } else {
+            updated[i] = { ...updated[i], stage: 'analyzing', progress: 15 }
+            setSources([...updated])
+            startProgressAnimation(i, 'analyzing', 15, 85)
+          }
 
           const res = await callExtractAPI(source)
 
-          // Stage 3: Extracting results (85-100%)
           if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
           updated[i] = { ...updated[i], stage: 'extracting', progress: 85 }
           setSources([...updated])
@@ -265,7 +372,6 @@ export default function KnowledgePage() {
 
           if (!res.ok) {
             const text = await res.text()
-            // レート制限エラーの場合はリトライ
             if (res.status === 429 || (res.status === 500 && text.includes('rate_limit'))) {
               if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
               const waitSec = 15 * (attempt + 1)
@@ -296,7 +402,7 @@ export default function KnowledgePage() {
             break
           }
 
-          // 成功
+          // Success
           updated[i] = {
             ...updated[i],
             status: 'done',
@@ -329,7 +435,7 @@ export default function KnowledgePage() {
     setResultSourceInfo(sourceInfos)
     setExtracting(false)
 
-    // 抽出完了後に自動保存
+    // Auto-save after extraction
     if (results.length > 0) {
       setSaving(true)
       setSaveError(null)
@@ -338,12 +444,11 @@ export default function KnowledgePage() {
       if (savedCount > 0) {
         setSavedMessage(`${savedCount}件のナレッジを自動保存しました`)
         setTimeout(() => setSavedMessage(null), 5000)
+        loadFolders()
         loadItems()
-        // Desktop notification
         notify('ナレッジ抽出完了', `${savedCount}件のナレッジを保存しました`)
       }
     } else {
-      // Notify even if no results
       notify('ナレッジ抽出完了', '抽出結果が0件でした')
     }
   }
@@ -353,19 +458,30 @@ export default function KnowledgePage() {
     let savedCount = 0
     const errors: string[] = []
 
+    // Create folder for this import batch
+    const autoFolderName = folderName.trim() || `インポート ${new Date().toLocaleDateString('ja-JP')} ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`
+    const { data: folder } = await supabase.from('knowledge_folders').insert({
+      client_id: uploadClientId,
+      name: autoFolderName,
+      description: sourceInfos.map(s => s.name).join(', '),
+    }).select('id').single()
+
+    const folderId = folder?.id ?? null
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       const sourceInfo = sourceInfos[i] ?? sourceInfos[0]
 
-      const { data: ki, error: kiError } = await supabase.from('knowledge_items').insert({
+      const { error: kiError } = await supabase.from('knowledge_items').insert({
         client_id: uploadClientId,
+        folder_id: folderId,
         category: item.category,
         title: item.title,
         content: item.content,
         source_type: sourceInfo?.type ?? 'manual',
         source_name: sourceInfo?.name ?? null,
         tags: item.tags,
-      }).select('id').single()
+      })
 
       if (kiError) {
         errors.push(`「${item.title}」の保存に失敗: ${kiError.message}`)
@@ -373,8 +489,6 @@ export default function KnowledgePage() {
       }
 
       savedCount++
-
-      // 事例情報はナレッジとして一元管理（case_studiesテーブルへの別途保存は不要）
     }
 
     if (errors.length > 0) {
@@ -393,6 +507,7 @@ export default function KnowledgePage() {
       setAllResults([])
       setSources([])
       setShowUpload(false)
+      loadFolders()
       loadItems()
     }
   }
@@ -422,7 +537,8 @@ export default function KnowledgePage() {
     await supabase.from('knowledge_items').delete().in('id', Array.from(selectedIds))
     setSelectedIds(new Set())
     setDeleting(false)
-    loadItems()
+    loadFolders()
+    loadItems(openFolderId)
   }
 
   function handleSort(key: typeof sortKey) {
@@ -434,8 +550,26 @@ export default function KnowledgePage() {
     }
   }
 
+  function openFolder(folderId: string) {
+    setOpenFolderId(folderId)
+    setViewMode('list')
+    loadItems(folderId)
+  }
+
+  function goBackToFolders() {
+    setOpenFolderId(null)
+    setViewMode('folders')
+    loadItems()
+  }
+
   const doneCount = sources.filter(s => s.status === 'done').length
   const pendingCount = sources.filter(s => s.status === 'pending').length
+
+  // Items to display: if in folder view, only folder items; in list view, all items
+  const displayItems = openFolderId ? items.filter(i => i.folder_id === openFolderId) : items
+
+  // Count of items without a folder
+  const unfolderedItems = items.filter(i => !i.folder_id)
 
   return (
     <div>
@@ -452,7 +586,7 @@ export default function KnowledgePage() {
         プロダクトごとの営業資料・事例・競合情報を蓄積し、手紙生成に活用します
       </p>
 
-      {/* アップロードパネル */}
+      {/* Upload panel */}
       {showUpload && (
         <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
           <h2 className="text-lg font-semibold text-neutral-900">ナレッジを一括追加</h2>
@@ -463,17 +597,30 @@ export default function KnowledgePage() {
             複数ファイルを一括処理できます。PDF1件あたり30秒〜1分程度かかります。件数が多い場合は自動的に間隔を空けて処理します。
           </p>
 
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-neutral-700">クライアント / プロダクト</label>
-            <select
-              value={uploadClientId}
-              onChange={(e) => setUploadClientId(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 sm:w-64"
-            >
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700">クライアント / プロダクト</label>
+              <select
+                value={uploadClientId}
+                onChange={(e) => setUploadClientId(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+              >
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700">フォルダ名（任意）</label>
+              <input
+                type="text"
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                placeholder="例: harutaka事例集、営業資料2024Q4"
+                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+              />
+              <p className="mt-1 text-xs text-neutral-400">空欄の場合は日時で自動命名されます</p>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -486,13 +633,24 @@ export default function KnowledgePage() {
                 rows={4}
                 className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
-              <button
-                onClick={addUrls}
-                disabled={!urlInput.trim()}
-                className="mt-2 rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-50"
-              >
-                URLを追加
-              </button>
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  onClick={addUrls}
+                  disabled={!urlInput.trim()}
+                  className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-50"
+                >
+                  URLを追加
+                </button>
+                <label className="flex items-center gap-2 text-sm text-neutral-600">
+                  <input
+                    type="checkbox"
+                    checked={deepCrawl}
+                    onChange={(e) => setDeepCrawl(e.target.checked)}
+                    className="h-4 w-4 rounded border-neutral-300"
+                  />
+                  子ページも読み取る（事例インタビュー等）
+                </label>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700">ファイルを追加（複数選択可）</label>
@@ -510,7 +668,7 @@ export default function KnowledgePage() {
             </div>
           </div>
 
-          {/* ソース一覧 */}
+          {/* Source queue */}
           {sources.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center justify-between">
@@ -584,16 +742,18 @@ export default function KnowledgePage() {
                 </button>
                 {extracting && (
                   <span className="text-xs text-neutral-500">
-                    {sources.length > 1
-                      ? `${sources.length}件を順番に処理中... 全体で${Math.ceil(sources.length * 1.5)}分ほどかかる場合があります`
-                      : 'AI処理のため30秒〜1分ほどかかります'}
+                    {deepCrawl
+                      ? '子ページのクロールを含むため、通常より時間がかかります'
+                      : sources.length > 1
+                        ? `${sources.length}件を順番に処理中... 全体で${Math.ceil(sources.length * 1.5)}分ほどかかる場合があります`
+                        : 'AI処理のため30秒〜1分ほどかかります'}
                   </span>
                 )}
               </div>
             </div>
           )}
 
-          {/* 保存状態メッセージ */}
+          {/* Save state messages */}
           {saving && (
             <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
               <p className="text-sm text-neutral-600">データベースに保存中...</p>
@@ -611,7 +771,7 @@ export default function KnowledgePage() {
             </div>
           )}
 
-          {/* 抽出結果 */}
+          {/* Extraction results */}
           {allResults.length > 0 && (
             <div className="mt-6 border-t border-neutral-200 pt-4">
               <div className="flex items-center justify-between">
@@ -656,7 +816,7 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      {/* フィルター・ソート・削除 */}
+      {/* Filter / Sort / Delete */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <select
           value={selectedClientId}
@@ -679,24 +839,46 @@ export default function KnowledgePage() {
           ))}
         </select>
 
+        {/* View toggle */}
         <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white p-0.5">
-          {([
-            ['created_at', '日付'],
-            ['title', 'タイトル'],
-            ['category', 'カテゴリ'],
-            ['source_name', '元資料'],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => handleSort(key)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                sortKey === key ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'
-              }`}
-            >
-              {label}{sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
-            </button>
-          ))}
+          <button
+            onClick={() => { setViewMode('folders'); setOpenFolderId(null); loadItems() }}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'folders' && !openFolderId ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'
+            }`}
+          >
+            フォルダ
+          </button>
+          <button
+            onClick={() => { setViewMode('list'); setOpenFolderId(null); loadItems() }}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'list' && !openFolderId ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'
+            }`}
+          >
+            一覧
+          </button>
         </div>
+
+        {viewMode === 'list' && (
+          <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white p-0.5">
+            {([
+              ['created_at', '日付'],
+              ['title', 'タイトル'],
+              ['category', 'カテゴリ'],
+              ['source_name', '元資料'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => handleSort(key)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  sortKey === key ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'
+                }`}
+              >
+                {label}{sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
+              </button>
+            ))}
+          </div>
+        )}
 
         {selectedIds.size > 0 && (
           <button
@@ -709,92 +891,199 @@ export default function KnowledgePage() {
         )}
       </div>
 
-      {/* 一括選択 */}
-      {items.length > 0 && (
-        <div className="mt-4 flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-neutral-500">
-            <input
-              type="checkbox"
-              checked={selectedIds.size === items.length && items.length > 0}
-              onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-neutral-300"
-            />
-            全選択
-          </label>
-          <span className="text-xs text-neutral-400">{items.length}件</span>
+      {/* Folder breadcrumb */}
+      {openFolderId && (
+        <div className="mt-4 flex items-center gap-2 text-sm">
+          <button onClick={goBackToFolders} className="text-neutral-900 hover:underline font-medium">
+            フォルダ一覧
+          </button>
+          <span className="text-neutral-400">/</span>
+          <span className="text-neutral-600">{folders.find(f => f.id === openFolderId)?.name ?? ''}</span>
         </div>
       )}
 
-      {/* ナレッジ一覧 */}
-      <div className="mt-2 space-y-3">
-        {loading ? (
-          <p className="text-sm text-neutral-500">読み込み中...</p>
-        ) : items.length === 0 ? (
-          <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center shadow-sm">
-            <p className="text-neutral-500">ナレッジがありません</p>
-            <p className="mt-1 text-sm text-neutral-400">「+ ナレッジを追加」からURL・ファイルを投入してください</p>
-          </div>
-        ) : (
-          items.map((item) => {
-            const cat = CATEGORY_LABELS[item.category] ?? CATEGORY_LABELS.other
-            const isExpanded = expandedId === item.id
-            const isSelected = selectedIds.has(item.id)
-            return (
-              <div
-                key={item.id}
-                className={`rounded-lg border bg-white transition-all hover:border-neutral-300 ${isSelected ? 'border-neutral-400 ring-1 ring-neutral-300' : 'border-neutral-200'}`}
-              >
-                <div className="flex items-start gap-3 p-4">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleSelect(item.id)}
-                    className="mt-1 h-4 w-4 rounded border-neutral-300"
-                  />
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                    className="flex flex-1 items-start gap-3 text-left"
-                  >
-                    <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cat.color}`}>
-                      {cat.text}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-neutral-900">{item.title}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="text-neutral-400">{item.client_name}</span>
-                        {item.source_name && (
-                          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">
-                            {item.source_type === 'url' ? '🔗' : '📄'} {item.source_name}
-                          </span>
-                        )}
-                        <span className="text-neutral-300">
-                          {new Date(item.created_at).toLocaleDateString('ja-JP')}
-                        </span>
+      {/* Folder view */}
+      {viewMode === 'folders' && !openFolderId && (
+        <div className="mt-4 space-y-3">
+          {loading ? (
+            <p className="text-sm text-neutral-500">読み込み中...</p>
+          ) : folders.length === 0 && unfolderedItems.length === 0 ? (
+            <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center shadow-sm">
+              <p className="text-neutral-500">ナレッジがありません</p>
+              <p className="mt-1 text-sm text-neutral-400">「+ ナレッジを追加」からURL・ファイルを投入してください</p>
+            </div>
+          ) : (
+            <>
+              {folders.map((folder) => (
+                <div
+                  key={folder.id}
+                  className="rounded-lg border border-neutral-200 bg-white hover:border-neutral-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3 p-4">
+                    <span className="text-lg">📁</span>
+                    {editingFolderId === folder.id ? (
+                      <div className="flex flex-1 items-center gap-2">
+                        <input
+                          type="text"
+                          value={editFolderName}
+                          onChange={(e) => setEditFolderName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && renameFolder(folder.id)}
+                          className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+                          autoFocus
+                        />
+                        <button onClick={() => renameFolder(folder.id)} className="text-xs text-neutral-900 hover:underline">保存</button>
+                        <button onClick={() => setEditingFolderId(null)} className="text-xs text-neutral-400 hover:underline">キャンセル</button>
                       </div>
-                      {!isExpanded && (
-                        <p className="mt-1 text-sm text-neutral-500 line-clamp-2">{item.content}</p>
-                      )}
-                    </div>
-                    <span className="text-neutral-400">{isExpanded ? '▲' : '▼'}</span>
-                  </button>
-                </div>
-                {isExpanded && (
-                  <div className="border-t border-neutral-100 px-4 pb-4 pt-3 ml-7">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">{item.content}</p>
-                    {item.tags && item.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        {item.tags.map(tag => (
-                          <span key={tag} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">{tag}</span>
-                        ))}
+                    ) : (
+                      <button
+                        onClick={() => openFolder(folder.id)}
+                        className="flex flex-1 items-center gap-3 text-left"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-neutral-900">{folder.name}</p>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
+                            <span>{folder.client_name}</span>
+                            <span>{folder.item_count}件</span>
+                            <span>{new Date(folder.created_at).toLocaleDateString('ja-JP')}</span>
+                          </div>
+                        </div>
+                        <span className="text-neutral-400">→</span>
+                      </button>
+                    )}
+                    {editingFolderId !== folder.id && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => { setEditingFolderId(folder.id); setEditFolderName(folder.name) }}
+                          className="rounded p-1 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                          title="名前変更"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => deleteFolder(folder.id)}
+                          className="rounded p-1 text-xs text-neutral-400 hover:bg-red-50 hover:text-red-500"
+                          title="削除"
+                        >
+                          🗑
+                        </button>
                       </div>
                     )}
                   </div>
-                )}
+                </div>
+              ))}
+
+              {/* Unfoldered items */}
+              {unfolderedItems.length > 0 && (
+                <div
+                  className="rounded-lg border border-neutral-200 bg-white hover:border-neutral-300 transition-colors cursor-pointer"
+                  onClick={() => { setViewMode('list'); setOpenFolderId(null) }}
+                >
+                  <div className="flex items-center gap-3 p-4">
+                    <span className="text-lg">📄</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-neutral-500">未分類</p>
+                      <p className="mt-1 text-xs text-neutral-400">{unfolderedItems.length}件</p>
+                    </div>
+                    <span className="text-neutral-400">→</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* List view (inside folder or all items) */}
+      {(viewMode === 'list' || openFolderId) && (
+        <>
+          {/* Bulk select */}
+          {displayItems.length > 0 && (
+            <div className="mt-4 flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-neutral-500">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === displayItems.length && displayItems.length > 0}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-neutral-300"
+                />
+                全選択
+              </label>
+              <span className="text-xs text-neutral-400">{displayItems.length}件</span>
+            </div>
+          )}
+
+          {/* Knowledge list */}
+          <div className="mt-2 space-y-3">
+            {loading ? (
+              <p className="text-sm text-neutral-500">読み込み中...</p>
+            ) : displayItems.length === 0 ? (
+              <div className="rounded-lg border border-neutral-200 bg-white p-8 text-center shadow-sm">
+                <p className="text-neutral-500">ナレッジがありません</p>
+                <p className="mt-1 text-sm text-neutral-400">「+ ナレッジを追加」からURL・ファイルを投入してください</p>
               </div>
-            )
-          })
-        )}
-      </div>
+            ) : (
+              displayItems.map((item) => {
+                const cat = CATEGORY_LABELS[item.category] ?? CATEGORY_LABELS.other
+                const isExpanded = expandedId === item.id
+                const isSelected = selectedIds.has(item.id)
+                return (
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border bg-white transition-all hover:border-neutral-300 ${isSelected ? 'border-neutral-400 ring-1 ring-neutral-300' : 'border-neutral-200'}`}
+                  >
+                    <div className="flex items-start gap-3 p-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(item.id)}
+                        className="mt-1 h-4 w-4 rounded border-neutral-300"
+                      />
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                        className="flex flex-1 items-start gap-3 text-left"
+                      >
+                        <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cat.color}`}>
+                          {cat.text}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-neutral-900">{item.title}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-neutral-400">{item.client_name}</span>
+                            {item.source_name && (
+                              <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">
+                                {item.source_type === 'url' ? '🔗' : '📄'} {item.source_name}
+                              </span>
+                            )}
+                            <span className="text-neutral-300">
+                              {new Date(item.created_at).toLocaleDateString('ja-JP')}
+                            </span>
+                          </div>
+                          {!isExpanded && (
+                            <p className="mt-1 text-sm text-neutral-500 line-clamp-2">{item.content}</p>
+                          )}
+                        </div>
+                        <span className="text-neutral-400">{isExpanded ? '▲' : '▼'}</span>
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="border-t border-neutral-100 px-4 pb-4 pt-3 ml-7">
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">{item.content}</p>
+                        {item.tags && item.tags.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-1">
+                            {item.tags.map(tag => (
+                              <span key={tag} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

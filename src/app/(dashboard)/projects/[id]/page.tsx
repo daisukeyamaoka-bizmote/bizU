@@ -58,6 +58,13 @@ export default function ProjectDetailPage() {
   // 対象者追加
   const [showUpload, setShowUpload] = useState(false)
   const [availableContacts, setAvailableContacts] = useState<{ id: string; full_name: string; company_name: string; title: string | null }[]>([])
+
+  // ナレッジ選択
+  const [showKnowledge, setShowKnowledge] = useState(false)
+  const [allKnowledge, setAllKnowledge] = useState<{ id: string; title: string; category: string; folder_name: string | null }[]>([])
+  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<Set<string>>(new Set())
+  const [savingKnowledge, setSavingKnowledge] = useState(false)
+  const [knowledgeCategoryFilter, setKnowledgeCategoryFilter] = useState<string>('all')
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [addingContacts, setAddingContacts] = useState(false)
@@ -117,6 +124,60 @@ export default function ProjectDetailPage() {
     setContacts(mapped)
     setLoading(false)
   }, [projectId])
+
+  // ナレッジ読み込み
+  const loadKnowledge = useCallback(async () => {
+    if (!project) return
+    const supabase = createClient()
+
+    // Get all knowledge for this client
+    const { data: knowledge } = await supabase
+      .from('knowledge_items')
+      .select('id, title, category, folder_id')
+      .eq('client_id', project.client_id)
+      .order('created_at', { ascending: false })
+
+    // Get folder names
+    const folderIds = [...new Set((knowledge ?? []).map(k => k.folder_id).filter(Boolean))]
+    const { data: foldersData } = folderIds.length > 0
+      ? await supabase.from('knowledge_folders').select('id, name').in('id', folderIds as string[])
+      : { data: [] }
+    const folderMap = new Map((foldersData ?? []).map(f => [f.id, f.name]))
+
+    setAllKnowledge((knowledge ?? []).map(k => ({
+      id: k.id,
+      title: k.title,
+      category: k.category,
+      folder_name: folderMap.get(k.folder_id ?? '') ?? null,
+    })))
+
+    // Load currently selected knowledge
+    const { data: selected } = await supabase
+      .from('project_knowledge')
+      .select('knowledge_id')
+      .eq('project_id', projectId)
+    setSelectedKnowledgeIds(new Set((selected ?? []).map(s => s.knowledge_id)))
+  }, [project, projectId])
+
+  async function saveKnowledgeSelection() {
+    setSavingKnowledge(true)
+    const supabase = createClient()
+
+    // Delete existing selections
+    await supabase.from('project_knowledge').delete().eq('project_id', projectId)
+
+    // Insert new selections
+    if (selectedKnowledgeIds.size > 0) {
+      const inserts = Array.from(selectedKnowledgeIds).map(knowledgeId => ({
+        project_id: projectId,
+        knowledge_id: knowledgeId,
+      }))
+      await supabase.from('project_knowledge').insert(inserts)
+    }
+
+    setSavingKnowledge(false)
+    setShowKnowledge(false)
+  }
 
   useEffect(() => {
     loadProject()
@@ -483,12 +544,120 @@ export default function ProjectDetailPage() {
           </button>
         )}
 
+        <button
+          onClick={() => { setShowKnowledge(!showKnowledge); if (!showKnowledge) loadKnowledge() }}
+          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200"
+        >
+          ナレッジ設定 {selectedKnowledgeIds.size > 0 ? `(${selectedKnowledgeIds.size}件選択中)` : ''}
+        </button>
+
         {pendingCount > 0 && !pipelineRunning && (
           <p className="text-sm text-neutral-500">
             未生成の対象者にチェックを入れて手紙を作成（最大5社）
           </p>
         )}
       </div>
+
+      {/* ナレッジ選択パネル */}
+      {showKnowledge && (
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-neutral-900">利用するナレッジを選択</h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                このプロジェクトの手紙生成に使用するナレッジを選択してください。未選択の場合はクライアントの全ナレッジが使用されます。
+              </p>
+            </div>
+            <select
+              value={knowledgeCategoryFilter}
+              onChange={(e) => setKnowledgeCategoryFilter(e.target.value)}
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+            >
+              <option value="all">全カテゴリ</option>
+              <option value="product_info">プロダクト情報</option>
+              <option value="case_study">導入事例</option>
+              <option value="sales_material">営業資料</option>
+              <option value="competitor">競合情報</option>
+              <option value="market">市場動向</option>
+              <option value="other">その他</option>
+            </select>
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={() => {
+                const filtered = allKnowledge.filter(k => knowledgeCategoryFilter === 'all' || k.category === knowledgeCategoryFilter)
+                setSelectedKnowledgeIds(new Set(filtered.map(k => k.id)))
+              }}
+              className="text-sm text-neutral-900 hover:underline"
+            >
+              表示中を全選択
+            </button>
+            <button
+              onClick={() => setSelectedKnowledgeIds(new Set())}
+              className="text-sm text-neutral-400 hover:underline"
+            >
+              全解除
+            </button>
+            <span className="text-xs text-neutral-400">{selectedKnowledgeIds.size}件選択中 / {allKnowledge.length}件</span>
+          </div>
+
+          <div className="mt-3 max-h-80 overflow-y-auto rounded-lg border border-neutral-200">
+            {allKnowledge
+              .filter(k => knowledgeCategoryFilter === 'all' || k.category === knowledgeCategoryFilter)
+              .map((k) => {
+                const catLabels: Record<string, string> = {
+                  product_info: 'プロダクト', case_study: '事例', sales_material: '営業資料',
+                  competitor: '競合', market: '市場', other: 'その他',
+                }
+                return (
+                  <label
+                    key={k.id}
+                    className="flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-3 py-2 hover:bg-neutral-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedKnowledgeIds.has(k.id)}
+                      onChange={() => {
+                        const next = new Set(selectedKnowledgeIds)
+                        if (next.has(k.id)) next.delete(k.id)
+                        else next.add(k.id)
+                        setSelectedKnowledgeIds(next)
+                      }}
+                      className="h-4 w-4 rounded border-neutral-300"
+                    />
+                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+                      {catLabels[k.category] ?? k.category}
+                    </span>
+                    <span className="flex-1 text-sm font-medium text-neutral-900">{k.title}</span>
+                    {k.folder_name && (
+                      <span className="text-xs text-neutral-400">📁 {k.folder_name}</span>
+                    )}
+                  </label>
+                )
+              })}
+            {allKnowledge.filter(k => knowledgeCategoryFilter === 'all' || k.category === knowledgeCategoryFilter).length === 0 && (
+              <p className="px-3 py-4 text-center text-sm text-neutral-400">ナレッジがありません</p>
+            )}
+          </div>
+
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={saveKnowledgeSelection}
+              disabled={savingKnowledge}
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {savingKnowledge ? '保存中...' : '保存'}
+            </button>
+            <button
+              onClick={() => setShowKnowledge(false)}
+              className="text-sm text-neutral-500 hover:underline"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* パイプライン進捗 */}
       {pipelineRunning && (
