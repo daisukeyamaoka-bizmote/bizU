@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useNotification } from '@/lib/useNotification'
@@ -41,6 +41,7 @@ type ResearchProgress = {
 
 export default function ProjectDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const projectId = params.id as string
 
   const [project, setProject] = useState<Project | null>(null)
@@ -529,6 +530,45 @@ export default function ProjectDetailPage() {
     loadProject()
   }
 
+  // 別の切り口で再送（プロジェクトコピー）
+  async function cloneProjectWithNewAngle() {
+    if (!project) return
+    const newAngle = prompt('新しい訴求切り口を入力してください:', project.why_you_angle ?? '')
+    if (!newAngle) return
+    const newTrigger = prompt('新しいトリガーを入力してください（任意）:', project.send_trigger ?? '')
+
+    const supabase = createClient()
+
+    // 新プロジェクト作成
+    const { data: newProject } = await supabase.from('projects').insert({
+      client_id: project.client_id,
+      name: `${project.name}（${newAngle}）`,
+      description: `${project.name} からの再送プロジェクト`,
+      why_you_angle: newAngle,
+      send_trigger: newTrigger || null,
+      case_study_id: project.case_study_id,
+      status: 'draft',
+      target_count: contacts.length,
+    }).select('id').single()
+
+    if (!newProject) {
+      setToast({ message: 'プロジェクト作成に失敗しました', type: 'error' })
+      return
+    }
+
+    // 対象者をコピー
+    const inserts = contacts.map(c => ({
+      project_id: newProject.id,
+      contact_id: c.contact_id,
+    }))
+    if (inserts.length > 0) {
+      await supabase.from('project_contacts').insert(inserts)
+    }
+
+    setToast({ message: `新プロジェクト「${newAngle}」を作成しました`, type: 'success' })
+    router.push(`/projects/${newProject.id}`)
+  }
+
   const statusLabel: Record<string, { text: string; color: string }> = {
     pending: { text: '未生成', color: 'bg-neutral-100 text-neutral-600' },
     generated: { text: '生成済', color: 'bg-emerald-50 text-emerald-700' },
@@ -600,6 +640,13 @@ export default function ProjectDetailPage() {
           className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
         >
           + 対象者を追加
+        </button>
+
+        <button
+          onClick={cloneProjectWithNewAngle}
+          className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        >
+          別の切り口で再送
         </button>
 
         {selectedPendingCount > 0 && !pipelineRunning && (
