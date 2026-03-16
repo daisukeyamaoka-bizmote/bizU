@@ -39,13 +39,103 @@ type CompanyData = {
   industry: string
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1']
-const REACTION_COLORS: Record<string, string> = {
-  '返信あり': '#3b82f6',
-  '商談化': '#10b981',
-  '失注': '#ef4444',
-  '無反応': '#a3a3a3',
-  '再送希望': '#f59e0b',
+// 3色パレット: ブルー / エメラルド / ニュートラル
+const C = {
+  primary: '#3b82f6',
+  accent: '#10b981',
+  muted: '#a3a3a3',
+} as const
+
+// ドーナツ用: 3色の濃淡で表現
+const DONUT_COLORS: Record<string, string> = {
+  '商談化': C.accent,
+  '返信あり': C.primary,
+  '再送希望': '#93c5fd',   // primary の淡い色
+  '失注': '#d4d4d4',       // muted の淡い色
+  '無反応': '#e5e5e5',
+}
+
+type PeriodMode = 'weekly' | 'monthly'
+type CompareMode = 'prev_period' | 'prev_year'
+
+// 日付ユーティリティ
+function startOfWeek(d: Date): Date {
+  const day = d.getDay()
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1) // 月曜始まり
+  return new Date(d.getFullYear(), d.getMonth(), diff)
+}
+
+function toDateStr(d: Date): string {
+  return d.toISOString().split('T')[0]
+}
+
+function getPeriodRange(mode: PeriodMode): { start: string; end: string } {
+  const now = new Date()
+  if (mode === 'monthly') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { start: toDateStr(start), end: toDateStr(now) }
+  }
+  const start = startOfWeek(now)
+  return { start: toDateStr(start), end: toDateStr(now) }
+}
+
+function getPrevPeriodRange(mode: PeriodMode): { start: string; end: string } {
+  const now = new Date()
+  if (mode === 'monthly') {
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+    return { start: toDateStr(prevStart), end: toDateStr(prevEnd) }
+  }
+  const thisWeekStart = startOfWeek(now)
+  const prevWeekStart = new Date(thisWeekStart)
+  prevWeekStart.setDate(prevWeekStart.getDate() - 7)
+  const prevWeekEnd = new Date(thisWeekStart)
+  prevWeekEnd.setDate(prevWeekEnd.getDate() - 1)
+  return { start: toDateStr(prevWeekStart), end: toDateStr(prevWeekEnd) }
+}
+
+function getPrevYearRange(mode: PeriodMode): { start: string; end: string } {
+  const now = new Date()
+  if (mode === 'monthly') {
+    const start = new Date(now.getFullYear() - 1, now.getMonth(), 1)
+    const end = new Date(now.getFullYear() - 1, now.getMonth() + 1, 0)
+    return { start: toDateStr(start), end: toDateStr(end) }
+  }
+  const thisWeekStart = startOfWeek(now)
+  const lastYearStart = new Date(thisWeekStart)
+  lastYearStart.setFullYear(lastYearStart.getFullYear() - 1)
+  const lastYearEnd = new Date(lastYearStart)
+  lastYearEnd.setDate(lastYearEnd.getDate() + 6)
+  return { start: toDateStr(lastYearStart), end: toDateStr(lastYearEnd) }
+}
+
+function computePeriodStats(
+  letters: LetterData[],
+  reactions: ReactionData[],
+  range: { start: string; end: string },
+) {
+  const sent = letters.filter(l => l.sent_at && l.sent_at >= range.start && l.sent_at <= range.end)
+  const sentIds = new Set(sent.map(l => l.id))
+  const periodReactions = reactions.filter(r =>
+    sentIds.has(r.letter_id) || (r.reacted_at && r.reacted_at >= range.start && r.reacted_at <= range.end)
+  )
+  const reacted = periodReactions.filter(r => ['返信あり', '商談化'].includes(r.reaction_type))
+  const deals = periodReactions.filter(r => r.reaction_type === '商談化')
+
+  return {
+    sent: sent.length,
+    reactions: reacted.length,
+    deals: deals.length,
+    reactionRate: sent.length > 0 ? parseFloat(((reacted.length / sent.length) * 100).toFixed(1)) : 0,
+  }
+}
+
+function deltaPercent(current: number, prev: number): { value: string; positive: boolean | null } {
+  if (prev === 0 && current === 0) return { value: '-', positive: null }
+  if (prev === 0) return { value: '+∞', positive: true }
+  const pct = ((current - prev) / prev) * 100
+  const sign = pct >= 0 ? '+' : ''
+  return { value: `${sign}${pct.toFixed(0)}%`, positive: pct > 0 ? true : pct < 0 ? false : null }
 }
 
 export default function DashboardPage() {
@@ -56,6 +146,8 @@ export default function DashboardPage() {
   const [companies, setCompanies] = useState<CompanyData[]>([])
   const [totalCompanyCount, setTotalCompanyCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('monthly')
+  const [compareMode, setCompareMode] = useState<CompareMode>('prev_period')
 
   useEffect(() => {
     loadData()
@@ -132,22 +224,35 @@ export default function DashboardPage() {
     return new Map(companies.map(c => [c.id, c.industry]))
   }, [companies])
 
-  // KPI計算
-  const stats = useMemo(() => {
-    const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+  // 期間別KPI（当期 / 前期 / 昨対）
+  const periodStats = useMemo(() => {
+    const currentRange = getPeriodRange(periodMode)
+    const prevRange = compareMode === 'prev_period'
+      ? getPrevPeriodRange(periodMode)
+      : getPrevYearRange(periodMode)
 
+    const current = computePeriodStats(filteredLetters, filteredReactions, currentRange)
+    const prev = computePeriodStats(filteredLetters, filteredReactions, prevRange)
+
+    return {
+      current,
+      prev,
+      delta: {
+        sent: deltaPercent(current.sent, prev.sent),
+        reactions: deltaPercent(current.reactions, prev.reactions),
+        deals: deltaPercent(current.deals, prev.deals),
+        reactionRate: deltaPercent(current.reactionRate, prev.reactionRate),
+      },
+    }
+  }, [filteredLetters, filteredReactions, periodMode, compareMode])
+
+  // 累計KPI
+  const cumulativeStats = useMemo(() => {
     const sentLetters = filteredLetters.filter(l => l.sent_at)
-    const sentThisMonth = sentLetters.filter(l => l.sent_at! >= startOfMonth)
-    const reactionsThisMonth = filteredReactions.filter(r => r.reacted_at && r.reacted_at >= startOfMonth)
-    const dealsThisMonth = reactionsThisMonth.filter(r => r.reaction_type === '商談化')
-
     const totalSent = sentLetters.length
     const totalGenerated = filteredLetters.length
-    const totalReactions = filteredReactions.length
     const totalDeals = filteredReactions.filter(r => r.reaction_type === '商談化').length
     const totalReplies = filteredReactions.filter(r => ['返信あり', '商談化'].includes(r.reaction_type)).length
-
     const reactionRate = totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : '0.0'
     const dealRate = totalSent > 0 ? ((totalDeals / totalSent) * 100).toFixed(1) : '0.0'
 
@@ -158,26 +263,11 @@ export default function DashboardPage() {
       ? (daysToReactList.reduce((a, b) => a + b, 0) / daysToReactList.length).toFixed(1)
       : '-'
 
-    return {
-      sentThisMonth: sentThisMonth.length,
-      reactionsThisMonth: reactionsThisMonth.length,
-      dealsThisMonth: dealsThisMonth.length,
-      reactionRateThisMonth: sentThisMonth.length > 0
-        ? ((reactionsThisMonth.length / sentThisMonth.length) * 100).toFixed(1) : '0.0',
-      totalGenerated,
-      totalSent,
-      totalReactions,
-      totalDeals,
-      reactionRate,
-      dealRate,
-      avgDaysToReact,
-    }
+    return { totalGenerated, totalSent, totalReactions: filteredReactions.length, totalDeals, reactionRate, dealRate, avgDaysToReact }
   }, [filteredLetters, filteredReactions])
 
   // ランキング計算
-  function computeRanking(
-    groupFn: (l: LetterData) => string | null,
-  ) {
+  function computeRanking(groupFn: (l: LetterData) => string | null) {
     const groups = new Map<string, { sent: number; reacted: number }>()
     const sentLetters = filteredLetters.filter(l => l.sent_at)
     for (const l of sentLetters) {
@@ -217,50 +307,53 @@ export default function DashboardPage() {
       .map(([name, value]) => ({ name, value }))
   }, [filteredReactions])
 
-  // 月次推移データ（ラインチャート用）
-  const monthlyTrend = useMemo(() => {
-    const months = new Map<string, { sent: number; reactions: number; deals: number }>()
-    const sentLetterIds = new Set<string>()
+  // 推移データ（週次 or 月次）
+  const trendData = useMemo(() => {
+    const buckets = new Map<string, { sent: number; reactions: number; deals: number }>()
 
     for (const l of filteredLetters) {
       if (!l.sent_at) continue
-      const month = l.sent_at.slice(0, 7) // YYYY-MM
-      const m = months.get(month) ?? { sent: 0, reactions: 0, deals: 0 }
-      m.sent++
-      months.set(month, m)
-      sentLetterIds.add(l.id)
+      const key = periodMode === 'monthly'
+        ? l.sent_at.slice(0, 7)
+        : toDateStr(startOfWeek(new Date(l.sent_at)))
+      const b = buckets.get(key) ?? { sent: 0, reactions: 0, deals: 0 }
+      b.sent++
+      buckets.set(key, b)
     }
 
     for (const r of filteredReactions) {
       if (!r.reacted_at) continue
-      const month = r.reacted_at.slice(0, 7)
-      const m = months.get(month) ?? { sent: 0, reactions: 0, deals: 0 }
-      m.reactions++
-      if (r.reaction_type === '商談化') m.deals++
-      months.set(month, m)
+      const key = periodMode === 'monthly'
+        ? r.reacted_at.slice(0, 7)
+        : toDateStr(startOfWeek(new Date(r.reacted_at)))
+      const b = buckets.get(key) ?? { sent: 0, reactions: 0, deals: 0 }
+      b.reactions++
+      if (r.reaction_type === '商談化') b.deals++
+      buckets.set(key, b)
     }
 
-    return Array.from(months.entries())
+    return Array.from(buckets.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-12)
-      .map(([month, data]) => ({
-        month: month.slice(5) + '月',
+      .slice(periodMode === 'monthly' ? -12 : -16)
+      .map(([key, data]) => ({
+        label: periodMode === 'monthly'
+          ? key.slice(5) + '月'
+          : key.slice(5).replace('-', '/') + '〜',
         ...data,
       }))
-  }, [filteredLetters, filteredReactions])
+  }, [filteredLetters, filteredReactions, periodMode])
 
   // 業種別データ（レーダーチャート用）
   const industryRadar = useMemo(() => {
-    const groups = new Map<string, { sent: number; reacted: number; deals: number }>()
+    const groups = new Map<string, { sent: number; reacted: number }>()
     const sentLetters = filteredLetters.filter(l => l.sent_at)
     for (const l of sentLetters) {
       const industry = l.company_id ? industryMap.get(l.company_id) : null
       if (!industry) continue
-      const g = groups.get(industry) ?? { sent: 0, reacted: 0, deals: 0 }
+      const g = groups.get(industry) ?? { sent: 0, reacted: 0 }
       g.sent++
       const r = filteredReactionMap.get(l.id)
       if (r && ['返信あり', '商談化'].includes(r.reaction_type)) g.reacted++
-      if (r && r.reaction_type === '商談化') g.deals++
       groups.set(industry, g)
     }
     return Array.from(groups.entries())
@@ -345,7 +438,6 @@ export default function DashboardPage() {
     const sentLetters = filteredLetters.filter(l => l.sent_at)
     if (sentLetters.length < 3) return hypotheses
 
-    // 業種 × 切り口のクロス分析
     const crossMap = new Map<string, { sent: number; reacted: number; deals: number }>()
     for (const l of sentLetters) {
       const industry = l.company_id ? industryMap.get(l.company_id) : null
@@ -359,7 +451,6 @@ export default function DashboardPage() {
       crossMap.set(key, g)
     }
 
-    // 高反応の業種×切り口コンボを抽出
     const combos = Array.from(crossMap.entries())
       .filter(([, v]) => v.sent >= 2 && v.reacted > 0)
       .map(([key, v]) => {
@@ -377,24 +468,22 @@ export default function DashboardPage() {
       })
     }
 
-    // 未開拓の高ポテンシャル業種
-    const industryStats = new Map<string, { sent: number; reacted: number; total: number }>()
     const industryCompanyCount = new Map<string, number>()
     for (const c of companies) {
       if (!c.industry) continue
       industryCompanyCount.set(c.industry, (industryCompanyCount.get(c.industry) ?? 0) + 1)
     }
+    const industryStats = new Map<string, { sent: number; reacted: number }>()
     for (const l of sentLetters) {
       const industry = l.company_id ? industryMap.get(l.company_id) : null
       if (!industry) continue
-      const g = industryStats.get(industry) ?? { sent: 0, reacted: 0, total: industryCompanyCount.get(industry) ?? 0 }
+      const g = industryStats.get(industry) ?? { sent: 0, reacted: 0 }
       g.sent++
       const r = filteredReactionMap.get(l.id)
       if (r && ['返信あり', '商談化'].includes(r.reaction_type)) g.reacted++
       industryStats.set(industry, g)
     }
 
-    // 反応率が高いが送付カバー率が低い業種
     for (const [industry, data] of industryStats) {
       const total = industryCompanyCount.get(industry) ?? 0
       if (total <= 0 || data.sent < 2) continue
@@ -409,11 +498,9 @@ export default function DashboardPage() {
       }
     }
 
-    // 切り口の横展開提案
     if (whyYouRanking.length > 0) {
       const bestAngle = whyYouRanking[0]
       if (bestAngle.rate > 0) {
-        // この切り口がまだ使われていない業種を探す
         const angledIndustries = new Set<string>()
         for (const l of sentLetters) {
           if (l.why_you_angle !== bestAngle.label) continue
@@ -439,6 +526,11 @@ export default function DashboardPage() {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId)
 
+  const periodLabel = periodMode === 'monthly' ? '今月' : '今週'
+  const compareLabel = compareMode === 'prev_period'
+    ? (periodMode === 'monthly' ? '先月比' : '先週比')
+    : '昨対比'
+
   if (loading) {
     return (
       <div>
@@ -450,6 +542,7 @@ export default function DashboardPage() {
 
   return (
     <div>
+      {/* ヘッダー */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">ダッシュボード</h1>
         <select
@@ -480,52 +573,109 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 今月の実績 KPIカード */}
-      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KPICard label="送付数" value={stats.sentThisMonth} suffix="通" sub="今月" color="#3b82f6" />
-        <KPICard label="反応数" value={stats.reactionsThisMonth} suffix="件" sub="今月" color="#10b981" />
-        <KPICard label="反応率" value={parseFloat(stats.reactionRateThisMonth)} suffix="%" sub="今月" color="#f59e0b" />
-        <KPICard label="商談化" value={stats.dealsThisMonth} suffix="件" sub="今月" color="#8b5cf6" />
+      {/* 期間切替 + 比較モード */}
+      <div className="mt-6 flex items-center gap-3">
+        <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
+          {(['weekly', 'monthly'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => setPeriodMode(mode)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                periodMode === mode
+                  ? 'bg-neutral-900 text-white'
+                  : 'text-neutral-500 hover:text-neutral-900'
+              }`}
+            >
+              {mode === 'weekly' ? '週次' : '月次'}
+            </button>
+          ))}
+        </div>
+        <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
+          {(['prev_period', 'prev_year'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => setCompareMode(mode)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                compareMode === mode
+                  ? 'bg-neutral-900 text-white'
+                  : 'text-neutral-500 hover:text-neutral-900'
+              }`}
+            >
+              {mode === 'prev_period'
+                ? (periodMode === 'monthly' ? '先月比' : '先週比')
+                : '昨年比'
+              }
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 当期 KPIカード + 前期比較 */}
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KPICard
+          label="送付数" value={periodStats.current.sent} suffix="通" sub={periodLabel}
+          delta={periodStats.delta.sent} compareLabel={compareLabel}
+          prev={periodStats.prev.sent} prevSuffix="通"
+        />
+        <KPICard
+          label="反応数" value={periodStats.current.reactions} suffix="件" sub={periodLabel}
+          delta={periodStats.delta.reactions} compareLabel={compareLabel}
+          prev={periodStats.prev.reactions} prevSuffix="件"
+        />
+        <KPICard
+          label="反応率" value={periodStats.current.reactionRate} suffix="%" sub={periodLabel}
+          delta={periodStats.delta.reactionRate} compareLabel={compareLabel}
+          prev={periodStats.prev.reactionRate} prevSuffix="%"
+          isPercent
+        />
+        <KPICard
+          label="商談化" value={periodStats.current.deals} suffix="件" sub={periodLabel}
+          delta={periodStats.delta.deals} compareLabel={compareLabel}
+          prev={periodStats.prev.deals} prevSuffix="件"
+        />
       </div>
 
       {/* 累計パフォーマンス */}
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <MiniKPI label="生成数" value={`${stats.totalGenerated}`} />
-        <MiniKPI label="送付累計" value={`${stats.totalSent}通`} />
-        <MiniKPI label="反応率" value={`${stats.reactionRate}%`} />
-        <MiniKPI label="商談化率" value={`${stats.dealRate}%`} />
-        <MiniKPI label="平均反応日数" value={stats.avgDaysToReact === '-' ? '-' : `${stats.avgDaysToReact}日`} />
+        <MiniKPI label="生成数" value={`${cumulativeStats.totalGenerated}`} />
+        <MiniKPI label="送付累計" value={`${cumulativeStats.totalSent}通`} />
+        <MiniKPI label="反応率" value={`${cumulativeStats.reactionRate}%`} />
+        <MiniKPI label="商談化率" value={`${cumulativeStats.dealRate}%`} />
+        <MiniKPI label="平均反応日数" value={cumulativeStats.avgDaysToReact === '-' ? '-' : `${cumulativeStats.avgDaysToReact}日`} />
       </div>
 
       {/* チャートエリア */}
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* 月次推移 */}
-        {monthlyTrend.length > 1 && (
+        {/* 推移チャート（週次 or 月次） */}
+        {trendData.length > 1 && (
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
-            <h3 className="text-sm font-semibold text-neutral-900">月次推移</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">
+              {periodMode === 'monthly' ? '月次' : '週次'}推移
+            </h3>
             <div className="mt-4 h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyTrend}>
+                <LineChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#a3a3a3" />
-                  <YAxis tick={{ fontSize: 12 }} stroke="#a3a3a3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={C.muted} />
+                  <YAxis tick={{ fontSize: 12 }} stroke={C.muted} />
                   <Tooltip
                     contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
                     animationDuration={200}
                   />
                   <Line
-                    type="monotone" dataKey="sent" name="送付" stroke="#3b82f6" strokeWidth={2}
+                    type="monotone" dataKey="sent" name="送付" stroke={C.primary} strokeWidth={2}
                     dot={{ r: 4 }} activeDot={{ r: 6 }}
                     animationDuration={1200} animationEasing="ease-in-out"
                   />
                   <Line
-                    type="monotone" dataKey="reactions" name="反応" stroke="#10b981" strokeWidth={2}
+                    type="monotone" dataKey="reactions" name="反応" stroke={C.accent} strokeWidth={2}
                     dot={{ r: 4 }} activeDot={{ r: 6 }}
                     animationDuration={1200} animationEasing="ease-in-out" animationBegin={300}
                   />
                   <Line
-                    type="monotone" dataKey="deals" name="商談化" stroke="#8b5cf6" strokeWidth={2}
-                    dot={{ r: 4 }} activeDot={{ r: 6 }}
+                    type="monotone" dataKey="deals" name="商談化" stroke={C.muted} strokeWidth={2}
+                    strokeDasharray="4 2"
+                    dot={{ r: 3 }} activeDot={{ r: 5 }}
                     animationDuration={1200} animationEasing="ease-in-out" animationBegin={600}
                   />
                 </LineChart>
@@ -550,8 +700,8 @@ export default function DashboardPage() {
                       animationDuration={1000} animationEasing="ease-out"
                       stroke="none"
                     >
-                      {reactionBreakdown.map((entry, i) => (
-                        <Cell key={entry.name} fill={REACTION_COLORS[entry.name] ?? COLORS[i % COLORS.length]} />
+                      {reactionBreakdown.map((entry) => (
+                        <Cell key={entry.name} fill={DONUT_COLORS[entry.name] ?? C.muted} />
                       ))}
                     </Pie>
                     <Tooltip
@@ -562,11 +712,11 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               </div>
               <div className="space-y-2">
-                {reactionBreakdown.map((entry, i) => (
+                {reactionBreakdown.map((entry) => (
                   <div key={entry.name} className="flex items-center gap-2">
                     <span
                       className="h-3 w-3 rounded-full"
-                      style={{ backgroundColor: REACTION_COLORS[entry.name] ?? COLORS[i % COLORS.length] }}
+                      style={{ backgroundColor: DONUT_COLORS[entry.name] ?? C.muted }}
                     />
                     <span className="text-sm text-neutral-700">{entry.name}</span>
                     <span className="text-sm font-bold text-neutral-900">{entry.value}件</span>
@@ -585,9 +735,9 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={whyYouRanking} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="#a3a3a3" unit="%" />
+                  <XAxis type="number" tick={{ fontSize: 12 }} stroke={C.muted} unit="%" />
                   <YAxis
-                    dataKey="label" type="category" tick={{ fontSize: 11 }} stroke="#a3a3a3" width={120}
+                    dataKey="label" type="category" tick={{ fontSize: 11 }} stroke={C.muted} width={120}
                   />
                   <Tooltip
                     contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
@@ -595,13 +745,9 @@ export default function DashboardPage() {
                     animationDuration={200}
                   />
                   <Bar
-                    dataKey="rate" fill="#3b82f6" radius={[0, 6, 6, 0]}
+                    dataKey="rate" fill={C.primary} radius={[0, 6, 6, 0]}
                     animationDuration={1000} animationEasing="ease-out"
-                  >
-                    {whyYouRanking.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Bar>
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -619,7 +765,7 @@ export default function DashboardPage() {
                   <PolarAngleAxis dataKey="industry" tick={{ fontSize: 11 }} />
                   <PolarRadiusAxis tick={{ fontSize: 10 }} />
                   <Radar
-                    name="反応率" dataKey="反応率" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3}
+                    name="反応率" dataKey="反応率" stroke={C.primary} fill={C.primary} fillOpacity={0.2}
                     animationDuration={1200} animationEasing="ease-out"
                   />
                   <Tooltip
@@ -632,7 +778,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* 業種別レーダーが3未満の場合は通常のバーチャート */}
+        {/* 業種別レーダーが3未満の場合はバーチャート */}
         {industryRadar.length > 0 && industryRadar.length < 3 && industryRanking.length > 0 && (
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
             <h3 className="text-sm font-semibold text-neutral-900">業種別 反応率</h3>
@@ -640,21 +786,17 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={industryRanking} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="#a3a3a3" unit="%" />
-                  <YAxis dataKey="label" type="category" tick={{ fontSize: 11 }} stroke="#a3a3a3" width={100} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} stroke={C.muted} unit="%" />
+                  <YAxis dataKey="label" type="category" tick={{ fontSize: 11 }} stroke={C.muted} width={100} />
                   <Tooltip
                     contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
                     formatter={(value) => [`${value}%`, '反応率']}
                     animationDuration={200}
                   />
                   <Bar
-                    dataKey="rate" fill="#10b981" radius={[0, 6, 6, 0]}
+                    dataKey="rate" fill={C.accent} radius={[0, 6, 6, 0]}
                     animationDuration={1000} animationEasing="ease-out"
-                  >
-                    {industryRanking.map((_, i) => (
-                      <Cell key={i} fill={COLORS[(i + 1) % COLORS.length]} />
-                    ))}
-                  </Bar>
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -669,7 +811,7 @@ export default function DashboardPage() {
           <ul className="mt-3 space-y-2">
             {insights.map((text, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-neutral-700">
-                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400" />
+                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: C.muted }} />
                 {text}
               </li>
             ))}
@@ -689,7 +831,7 @@ export default function DashboardPage() {
                   <h4 className="text-sm font-semibold text-neutral-900">{h.title}</h4>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
                     h.confidence === 'high' ? 'bg-emerald-50 text-emerald-700' :
-                    h.confidence === 'medium' ? 'bg-amber-50 text-amber-700' :
+                    h.confidence === 'medium' ? 'bg-blue-50 text-blue-700' :
                     'bg-neutral-100 text-neutral-500'
                   }`}>
                     {h.confidence === 'high' ? '確度高' : h.confidence === 'medium' ? '確度中' : '確度低'}
@@ -707,10 +849,10 @@ export default function DashboardPage() {
         <div className="mt-8">
           <h2 className="text-lg font-semibold text-neutral-900">データ資産</h2>
           <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <DataAsset value={`${stats.totalSent}通`} label="送付累計" />
+            <DataAsset value={`${cumulativeStats.totalSent}通`} label="送付累計" />
             <DataAsset value={`${totalCompanyCount}社`} label="取引先数" />
-            <DataAsset value={`${stats.totalReactions}件`} label="反応累計" />
-            <DataAsset value={`${stats.totalDeals}件`} label="商談化累計" />
+            <DataAsset value={`${cumulativeStats.totalReactions}件`} label="反応累計" />
+            <DataAsset value={`${cumulativeStats.totalDeals}件`} label="商談化累計" />
           </div>
         </div>
       )}
@@ -729,8 +871,11 @@ export default function DashboardPage() {
   )
 }
 
-function KPICard({ label, value, suffix, sub, color }: {
-  label: string; value: number; suffix: string; sub?: string; color: string
+function KPICard({ label, value, suffix, sub, delta, compareLabel, prev, prevSuffix, isPercent }: {
+  label: string; value: number; suffix: string; sub: string
+  delta: { value: string; positive: boolean | null }
+  compareLabel: string; prev: number; prevSuffix: string
+  isPercent?: boolean
 }) {
   const [displayValue, setDisplayValue] = useState(0)
 
@@ -738,13 +883,9 @@ function KPICard({ label, value, suffix, sub, color }: {
     if (value === 0) { setDisplayValue(0); return }
     const duration = 800
     const steps = 30
-    const increment = value / steps
-    let current = 0
     let step = 0
     const timer = setInterval(() => {
       step++
-      current = Math.min(current + increment, value)
-      // ease-out
       const progress = step / steps
       const eased = 1 - Math.pow(1 - progress, 3)
       setDisplayValue(parseFloat((value * eased).toFixed(1)))
@@ -760,16 +901,27 @@ function KPICard({ label, value, suffix, sub, color }: {
     <div className="rounded-lg border border-neutral-200 bg-white p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-neutral-500">{label}</p>
-        {sub && <span className="text-xs text-neutral-400">{sub}</span>}
+        <span className="text-xs text-neutral-400">{sub}</span>
       </div>
-      <p className="mt-2 text-3xl font-bold" style={{ color }}>
-        {suffix === '%' ? displayValue.toFixed(1) : Math.round(displayValue)}{suffix}
+      <p className="mt-2 text-3xl font-bold" style={{ color: C.primary }}>
+        {isPercent ? displayValue.toFixed(1) : Math.round(displayValue)}{suffix}
       </p>
-      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-neutral-100">
-        <div
-          className="h-full rounded-full transition-all duration-1000 ease-out"
-          style={{ width: `${Math.min((value / Math.max(value, 1)) * 100, 100)}%`, backgroundColor: color }}
-        />
+      {/* 前期比較 */}
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          {delta.positive !== null && (
+            <span className={`text-xs font-bold ${delta.positive ? 'text-emerald-600' : 'text-red-500'}`}>
+              {delta.positive ? '\u25B2' : '\u25BC'} {delta.value}
+            </span>
+          )}
+          {delta.positive === null && (
+            <span className="text-xs text-neutral-400">{delta.value}</span>
+          )}
+          <span className="text-[10px] text-neutral-400">{compareLabel}</span>
+        </div>
+        <span className="text-[10px] text-neutral-400">
+          前期: {isPercent ? prev.toFixed(1) : prev}{prevSuffix}
+        </span>
       </div>
     </div>
   )
