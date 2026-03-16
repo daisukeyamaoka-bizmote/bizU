@@ -3,6 +3,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line, CartesianGrid,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+} from 'recharts'
 
 type Project = {
   id: string
@@ -32,6 +37,15 @@ type ReactionData = {
 type CompanyData = {
   id: string
   industry: string
+}
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1']
+const REACTION_COLORS: Record<string, string> = {
+  '返信あり': '#3b82f6',
+  '商談化': '#10b981',
+  '失注': '#ef4444',
+  '無反応': '#a3a3a3',
+  '再送希望': '#f59e0b',
 }
 
 export default function DashboardPage() {
@@ -137,7 +151,6 @@ export default function DashboardPage() {
     const reactionRate = totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : '0.0'
     const dealRate = totalSent > 0 ? ((totalDeals / totalSent) * 100).toFixed(1) : '0.0'
 
-    // 平均反応日数
     const daysToReactList = filteredReactions
       .filter(r => r.days_to_react !== null && r.days_to_react >= 0)
       .map(r => r.days_to_react!)
@@ -180,11 +193,11 @@ export default function DashboardPage() {
       .filter(([, v]) => v.sent >= 1)
       .map(([label, v]) => ({
         label,
-        rate: v.sent > 0 ? ((v.reacted / v.sent) * 100).toFixed(1) : '0.0',
+        rate: v.sent > 0 ? parseFloat(((v.reacted / v.sent) * 100).toFixed(1)) : 0,
         sent: v.sent,
         reacted: v.reacted,
       }))
-      .sort((a, b) => parseFloat(b.rate) - parseFloat(a.rate))
+      .sort((a, b) => b.rate - a.rate)
       .slice(0, 5)
   }
 
@@ -193,7 +206,7 @@ export default function DashboardPage() {
     return l.company_id ? (industryMap.get(l.company_id) ?? null) : null
   }), [filteredLetters, filteredReactionMap, industryMap])
 
-  // 反応種別の内訳
+  // 反応種別の内訳（ドーナツチャート用）
   const reactionBreakdown = useMemo(() => {
     const counts = new Map<string, number>()
     for (const r of filteredReactions) {
@@ -201,7 +214,64 @@ export default function DashboardPage() {
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name, value }))
   }, [filteredReactions])
+
+  // 月次推移データ（ラインチャート用）
+  const monthlyTrend = useMemo(() => {
+    const months = new Map<string, { sent: number; reactions: number; deals: number }>()
+    const sentLetterIds = new Set<string>()
+
+    for (const l of filteredLetters) {
+      if (!l.sent_at) continue
+      const month = l.sent_at.slice(0, 7) // YYYY-MM
+      const m = months.get(month) ?? { sent: 0, reactions: 0, deals: 0 }
+      m.sent++
+      months.set(month, m)
+      sentLetterIds.add(l.id)
+    }
+
+    for (const r of filteredReactions) {
+      if (!r.reacted_at) continue
+      const month = r.reacted_at.slice(0, 7)
+      const m = months.get(month) ?? { sent: 0, reactions: 0, deals: 0 }
+      m.reactions++
+      if (r.reaction_type === '商談化') m.deals++
+      months.set(month, m)
+    }
+
+    return Array.from(months.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([month, data]) => ({
+        month: month.slice(5) + '月',
+        ...data,
+      }))
+  }, [filteredLetters, filteredReactions])
+
+  // 業種別データ（レーダーチャート用）
+  const industryRadar = useMemo(() => {
+    const groups = new Map<string, { sent: number; reacted: number; deals: number }>()
+    const sentLetters = filteredLetters.filter(l => l.sent_at)
+    for (const l of sentLetters) {
+      const industry = l.company_id ? industryMap.get(l.company_id) : null
+      if (!industry) continue
+      const g = groups.get(industry) ?? { sent: 0, reacted: 0, deals: 0 }
+      g.sent++
+      const r = filteredReactionMap.get(l.id)
+      if (r && ['返信あり', '商談化'].includes(r.reaction_type)) g.reacted++
+      if (r && r.reaction_type === '商談化') g.deals++
+      groups.set(industry, g)
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => b[1].sent - a[1].sent)
+      .slice(0, 6)
+      .map(([industry, data]) => ({
+        industry,
+        反応率: data.sent > 0 ? parseFloat(((data.reacted / data.sent) * 100).toFixed(1)) : 0,
+        送付数: data.sent,
+      }))
+  }, [filteredLetters, filteredReactionMap, industryMap])
 
   // 定性インサイト生成
   const insights = useMemo(() => {
@@ -209,29 +279,26 @@ export default function DashboardPage() {
     const sentLetters = filteredLetters.filter(l => l.sent_at)
     if (sentLetters.length === 0) return result
 
-    // Best performing angle
     if (whyYouRanking.length > 0) {
       const best = whyYouRanking[0]
-      if (parseFloat(best.rate) > 0) {
+      if (best.rate > 0) {
         result.push(`「${best.label}」の切り口が最も反応率が高く${best.rate}%（${best.reacted}/${best.sent}件）です。`)
       }
       if (whyYouRanking.length >= 2) {
         const worst = whyYouRanking[whyYouRanking.length - 1]
-        if (parseFloat(worst.rate) === 0 && worst.sent >= 3) {
+        if (worst.rate === 0 && worst.sent >= 3) {
           result.push(`「${worst.label}」は${worst.sent}件送付で反応ゼロです。切り口の見直しを検討してください。`)
         }
       }
     }
 
-    // Best performing industry
     if (industryRanking.length > 0) {
       const best = industryRanking[0]
-      if (parseFloat(best.rate) > 0) {
+      if (best.rate > 0) {
         result.push(`業種別では「${best.label}」が反応率${best.rate}%と最も効果的です。`)
       }
     }
 
-    // Reaction velocity insight
     const daysToReactList = filteredReactions
       .filter(r => r.days_to_react !== null && r.days_to_react >= 0)
       .map(r => r.days_to_react!)
@@ -248,7 +315,6 @@ export default function DashboardPage() {
       }
     }
 
-    // Deal conversion pattern
     const deals = filteredReactions.filter(r => r.reaction_type === '商談化')
     const replies = filteredReactions.filter(r => r.reaction_type === '返信あり')
     if (deals.length > 0 && replies.length > 0) {
@@ -256,7 +322,6 @@ export default function DashboardPage() {
       result.push(`返信のうち${convRate}%が商談化に至っています。`)
     }
 
-    // Overall reaction rate assessment
     const totalReactions = filteredReactions.length
     const reactionRate = totalReactions / sentLetters.length
     if (sentLetters.length >= 5) {
@@ -267,13 +332,110 @@ export default function DashboardPage() {
       }
     }
 
-    // No reaction yet
     if (sentLetters.length > 0 && totalReactions === 0) {
       result.push('送付済みの手紙にまだ反応がありません。フォローコールを検討してください。')
     }
 
     return result
   }, [filteredLetters, filteredReactions, whyYouRanking, industryRanking])
+
+  // ターゲット仮説生成
+  const targetHypotheses = useMemo(() => {
+    const hypotheses: { title: string; description: string; confidence: 'high' | 'medium' | 'low' }[] = []
+    const sentLetters = filteredLetters.filter(l => l.sent_at)
+    if (sentLetters.length < 3) return hypotheses
+
+    // 業種 × 切り口のクロス分析
+    const crossMap = new Map<string, { sent: number; reacted: number; deals: number }>()
+    for (const l of sentLetters) {
+      const industry = l.company_id ? industryMap.get(l.company_id) : null
+      if (!industry) continue
+      const key = `${industry}|${l.why_you_angle}`
+      const g = crossMap.get(key) ?? { sent: 0, reacted: 0, deals: 0 }
+      g.sent++
+      const r = filteredReactionMap.get(l.id)
+      if (r && ['返信あり', '商談化'].includes(r.reaction_type)) g.reacted++
+      if (r && r.reaction_type === '商談化') g.deals++
+      crossMap.set(key, g)
+    }
+
+    // 高反応の業種×切り口コンボを抽出
+    const combos = Array.from(crossMap.entries())
+      .filter(([, v]) => v.sent >= 2 && v.reacted > 0)
+      .map(([key, v]) => {
+        const [industry, angle] = key.split('|')
+        return { industry, angle, ...v, rate: (v.reacted / v.sent) * 100 }
+      })
+      .sort((a, b) => b.rate - a.rate)
+
+    if (combos.length > 0) {
+      const best = combos[0]
+      hypotheses.push({
+        title: `${best.industry} × 「${best.angle}」が有望`,
+        description: `反応率${best.rate.toFixed(0)}%（${best.reacted}/${best.sent}件）。同業種の未送付企業への横展開が効果的です。`,
+        confidence: best.sent >= 5 ? 'high' : best.sent >= 3 ? 'medium' : 'low',
+      })
+    }
+
+    // 未開拓の高ポテンシャル業種
+    const industryStats = new Map<string, { sent: number; reacted: number; total: number }>()
+    const industryCompanyCount = new Map<string, number>()
+    for (const c of companies) {
+      if (!c.industry) continue
+      industryCompanyCount.set(c.industry, (industryCompanyCount.get(c.industry) ?? 0) + 1)
+    }
+    for (const l of sentLetters) {
+      const industry = l.company_id ? industryMap.get(l.company_id) : null
+      if (!industry) continue
+      const g = industryStats.get(industry) ?? { sent: 0, reacted: 0, total: industryCompanyCount.get(industry) ?? 0 }
+      g.sent++
+      const r = filteredReactionMap.get(l.id)
+      if (r && ['返信あり', '商談化'].includes(r.reaction_type)) g.reacted++
+      industryStats.set(industry, g)
+    }
+
+    // 反応率が高いが送付カバー率が低い業種
+    for (const [industry, data] of industryStats) {
+      const total = industryCompanyCount.get(industry) ?? 0
+      if (total <= 0 || data.sent < 2) continue
+      const rate = (data.reacted / data.sent) * 100
+      const coverage = (data.sent / total) * 100
+      if (rate >= 20 && coverage < 50) {
+        hypotheses.push({
+          title: `${industry}の送付拡大（カバー率${coverage.toFixed(0)}%）`,
+          description: `反応率${rate.toFixed(0)}%と好調ですが、${total}社中${data.sent}社のみに送付。残り${total - data.sent}社へのアプローチで追加反応が見込めます。`,
+          confidence: rate >= 30 ? 'high' : 'medium',
+        })
+      }
+    }
+
+    // 切り口の横展開提案
+    if (whyYouRanking.length > 0) {
+      const bestAngle = whyYouRanking[0]
+      if (bestAngle.rate > 0) {
+        // この切り口がまだ使われていない業種を探す
+        const angledIndustries = new Set<string>()
+        for (const l of sentLetters) {
+          if (l.why_you_angle !== bestAngle.label) continue
+          const ind = l.company_id ? industryMap.get(l.company_id) : null
+          if (ind) angledIndustries.add(ind)
+        }
+        const untried = Array.from(industryCompanyCount.entries())
+          .filter(([ind]) => !angledIndustries.has(ind) && (industryCompanyCount.get(ind) ?? 0) >= 3)
+          .sort((a, b) => b[1] - a[1])
+
+        if (untried.length > 0) {
+          hypotheses.push({
+            title: `「${bestAngle.label}」を${untried[0][0]}に展開`,
+            description: `最高反応率の切り口をまだ試していない${untried[0][0]}（${untried[0][1]}社）に横展開すると効果が期待できます。`,
+            confidence: 'medium',
+          })
+        }
+      }
+    }
+
+    return hypotheses.slice(0, 4)
+  }, [filteredLetters, filteredReactionMap, industryMap, companies, whyYouRanking])
 
   const selectedProject = projects.find(p => p.id === selectedProjectId)
 
@@ -320,10 +482,10 @@ export default function DashboardPage() {
 
       {/* 今月の実績 KPIカード */}
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KPICard label="送付数" value={`${stats.sentThisMonth}通`} sub="今月" />
-        <KPICard label="反応数" value={`${stats.reactionsThisMonth}件`} sub="今月" />
-        <KPICard label="反応率" value={`${stats.reactionRateThisMonth}%`} sub="今月" />
-        <KPICard label="商談化" value={`${stats.dealsThisMonth}件`} sub="今月" />
+        <KPICard label="送付数" value={stats.sentThisMonth} suffix="通" sub="今月" color="#3b82f6" />
+        <KPICard label="反応数" value={stats.reactionsThisMonth} suffix="件" sub="今月" color="#10b981" />
+        <KPICard label="反応率" value={parseFloat(stats.reactionRateThisMonth)} suffix="%" sub="今月" color="#f59e0b" />
+        <KPICard label="商談化" value={stats.dealsThisMonth} suffix="件" sub="今月" color="#8b5cf6" />
       </div>
 
       {/* 累計パフォーマンス */}
@@ -335,37 +497,169 @@ export default function DashboardPage() {
         <MiniKPI label="平均反応日数" value={stats.avgDaysToReact === '-' ? '-' : `${stats.avgDaysToReact}日`} />
       </div>
 
-      {/* 反応内訳 */}
-      {reactionBreakdown.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-neutral-900">反応内訳</h2>
-          <div className="mt-3 flex flex-wrap gap-3">
-            {reactionBreakdown.map(([type, count]) => {
-              const colors: Record<string, string> = {
-                '返信あり': 'bg-blue-50 text-blue-700 border-blue-200',
-                '商談化': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                '失注': 'bg-red-50 text-red-600 border-red-200',
-                '無反応': 'bg-neutral-100 text-neutral-500 border-neutral-200',
-                '再送希望': 'bg-amber-50 text-amber-700 border-amber-200',
-              }
-              return (
-                <div key={type} className={`rounded-lg border px-4 py-2 ${colors[type] ?? 'bg-neutral-50 text-neutral-700 border-neutral-200'}`}>
-                  <span className="text-lg font-bold">{count}</span>
-                  <span className="ml-1.5 text-xs font-medium">{type}</span>
-                </div>
-              )
-            })}
+      {/* チャートエリア */}
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* 月次推移 */}
+        {monthlyTrend.length > 1 && (
+          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+            <h3 className="text-sm font-semibold text-neutral-900">月次推移</h3>
+            <div className="mt-4 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#a3a3a3" />
+                  <YAxis tick={{ fontSize: 12 }} stroke="#a3a3a3" />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
+                    animationDuration={200}
+                  />
+                  <Line
+                    type="monotone" dataKey="sent" name="送付" stroke="#3b82f6" strokeWidth={2}
+                    dot={{ r: 4 }} activeDot={{ r: 6 }}
+                    animationDuration={1200} animationEasing="ease-in-out"
+                  />
+                  <Line
+                    type="monotone" dataKey="reactions" name="反応" stroke="#10b981" strokeWidth={2}
+                    dot={{ r: 4 }} activeDot={{ r: 6 }}
+                    animationDuration={1200} animationEasing="ease-in-out" animationBegin={300}
+                  />
+                  <Line
+                    type="monotone" dataKey="deals" name="商談化" stroke="#8b5cf6" strokeWidth={2}
+                    dot={{ r: 4 }} activeDot={{ r: 6 }}
+                    animationDuration={1200} animationEasing="ease-in-out" animationBegin={600}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* インテリジェンス */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-neutral-900">インテリジェンス</h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <RankingCard title="Why You別 反応率" items={whyYouRanking} />
-          <RankingCard title="業種別 反応率" items={industryRanking} />
-        </div>
+        {/* 反応内訳ドーナツ */}
+        {reactionBreakdown.length > 0 && (
+          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+            <h3 className="text-sm font-semibold text-neutral-900">反応内訳</h3>
+            <div className="mt-4 flex items-center gap-4">
+              <div className="h-56 w-56 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={reactionBreakdown}
+                      cx="50%" cy="50%"
+                      innerRadius={55} outerRadius={85}
+                      dataKey="value"
+                      animationDuration={1000} animationEasing="ease-out"
+                      stroke="none"
+                    >
+                      {reactionBreakdown.map((entry, i) => (
+                        <Cell key={entry.name} fill={REACTION_COLORS[entry.name] ?? COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
+                      animationDuration={200}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="space-y-2">
+                {reactionBreakdown.map((entry, i) => (
+                  <div key={entry.name} className="flex items-center gap-2">
+                    <span
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: REACTION_COLORS[entry.name] ?? COLORS[i % COLORS.length] }}
+                    />
+                    <span className="text-sm text-neutral-700">{entry.name}</span>
+                    <span className="text-sm font-bold text-neutral-900">{entry.value}件</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Why You別 反応率バーチャート */}
+        {whyYouRanking.length > 0 && (
+          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+            <h3 className="text-sm font-semibold text-neutral-900">切り口別 反応率</h3>
+            <div className="mt-4 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={whyYouRanking} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="#a3a3a3" unit="%" />
+                  <YAxis
+                    dataKey="label" type="category" tick={{ fontSize: 11 }} stroke="#a3a3a3" width={120}
+                  />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
+                    formatter={(value) => [`${value}%`, '反応率']}
+                    animationDuration={200}
+                  />
+                  <Bar
+                    dataKey="rate" fill="#3b82f6" radius={[0, 6, 6, 0]}
+                    animationDuration={1000} animationEasing="ease-out"
+                  >
+                    {whyYouRanking.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* 業種別レーダーチャート */}
+        {industryRadar.length >= 3 && (
+          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+            <h3 className="text-sm font-semibold text-neutral-900">業種別 反応率マップ</h3>
+            <div className="mt-4 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={industryRadar}>
+                  <PolarGrid stroke="#e5e5e5" />
+                  <PolarAngleAxis dataKey="industry" tick={{ fontSize: 11 }} />
+                  <PolarRadiusAxis tick={{ fontSize: 10 }} />
+                  <Radar
+                    name="反応率" dataKey="反応率" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3}
+                    animationDuration={1200} animationEasing="ease-out"
+                  />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
+                    animationDuration={200}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* 業種別レーダーが3未満の場合は通常のバーチャート */}
+        {industryRadar.length > 0 && industryRadar.length < 3 && industryRanking.length > 0 && (
+          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+            <h3 className="text-sm font-semibold text-neutral-900">業種別 反応率</h3>
+            <div className="mt-4 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={industryRanking} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="#a3a3a3" unit="%" />
+                  <YAxis dataKey="label" type="category" tick={{ fontSize: 11 }} stroke="#a3a3a3" width={100} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13 }}
+                    formatter={(value) => [`${value}%`, '反応率']}
+                    animationDuration={200}
+                  />
+                  <Bar
+                    dataKey="rate" fill="#10b981" radius={[0, 6, 6, 0]}
+                    animationDuration={1000} animationEasing="ease-out"
+                  >
+                    {industryRanking.map((_, i) => (
+                      <Cell key={i} fill={COLORS[(i + 1) % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 定性インサイト */}
@@ -380,6 +674,31 @@ export default function DashboardPage() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* ターゲット仮説 */}
+      {targetHypotheses.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-lg font-semibold text-neutral-900">ターゲット仮説</h2>
+          <p className="mt-1 text-xs text-neutral-500">蓄積データから次のアプローチ先を提案します</p>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {targetHypotheses.map((h, i) => (
+              <div key={i} className="rounded-lg border border-neutral-200 bg-white p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-neutral-900">{h.title}</h4>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    h.confidence === 'high' ? 'bg-emerald-50 text-emerald-700' :
+                    h.confidence === 'medium' ? 'bg-amber-50 text-amber-700' :
+                    'bg-neutral-100 text-neutral-500'
+                  }`}>
+                    {h.confidence === 'high' ? '確度高' : h.confidence === 'medium' ? '確度中' : '確度低'}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-neutral-600">{h.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -410,58 +729,64 @@ export default function DashboardPage() {
   )
 }
 
-function KPICard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function KPICard({ label, value, suffix, sub, color }: {
+  label: string; value: number; suffix: string; sub?: string; color: string
+}) {
+  const [displayValue, setDisplayValue] = useState(0)
+
+  useEffect(() => {
+    if (value === 0) { setDisplayValue(0); return }
+    const duration = 800
+    const steps = 30
+    const increment = value / steps
+    let current = 0
+    let step = 0
+    const timer = setInterval(() => {
+      step++
+      current = Math.min(current + increment, value)
+      // ease-out
+      const progress = step / steps
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setDisplayValue(parseFloat((value * eased).toFixed(1)))
+      if (step >= steps) {
+        setDisplayValue(value)
+        clearInterval(timer)
+      }
+    }, duration / steps)
+    return () => clearInterval(timer)
+  }, [value])
+
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-5">
+    <div className="rounded-lg border border-neutral-200 bg-white p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-neutral-500">{label}</p>
         {sub && <span className="text-xs text-neutral-400">{sub}</span>}
       </div>
-      <p className="mt-2 text-3xl font-bold text-neutral-900">{value}</p>
+      <p className="mt-2 text-3xl font-bold" style={{ color }}>
+        {suffix === '%' ? displayValue.toFixed(1) : Math.round(displayValue)}{suffix}
+      </p>
+      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-neutral-100">
+        <div
+          className="h-full rounded-full transition-all duration-1000 ease-out"
+          style={{ width: `${Math.min((value / Math.max(value, 1)) * 100, 100)}%`, backgroundColor: color }}
+        />
+      </div>
     </div>
   )
 }
 
 function MiniKPI({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white px-4 py-3">
+    <div className="rounded-lg border border-neutral-200 bg-white px-4 py-3 transition-shadow hover:shadow-md">
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="mt-1 text-lg font-bold text-neutral-900">{value}</p>
     </div>
   )
 }
 
-function RankingCard({ title, items }: { title: string; items: { label: string; rate: string; sent: number; reacted: number }[] }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-5">
-      <h3 className="text-xs font-semibold uppercase text-neutral-500">{title}</h3>
-      {items.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-400">データなし</p>
-      ) : (
-        <div className="mt-3 space-y-2.5">
-          {items.map((item, i) => (
-            <div key={item.label} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 text-[10px] font-bold text-neutral-600">
-                  {i + 1}
-                </span>
-                <span className="text-sm text-neutral-900">{item.label}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold text-neutral-900">{item.rate}%</span>
-                <span className="ml-1 text-xs text-neutral-400">({item.reacted}/{item.sent})</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function DataAsset({ value, label }: { value: string; label: string }) {
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center transition-shadow hover:shadow-md">
       <p className="text-2xl font-bold text-neutral-900">{value}</p>
       <p className="mt-1 text-xs text-neutral-500">{label}</p>
     </div>
@@ -474,7 +799,7 @@ function ExportLink({ type, label, description }: { type: string; label: string;
       href={`/api/export?type=${type}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex flex-col items-start rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left hover:bg-neutral-50"
+      className="flex flex-col items-start rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-shadow hover:bg-neutral-50 hover:shadow-md"
     >
       <span className="text-sm font-medium text-neutral-900">{label}</span>
       <span className="mt-0.5 text-xs text-neutral-500">{description}</span>
