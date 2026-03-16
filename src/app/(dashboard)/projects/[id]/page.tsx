@@ -487,20 +487,12 @@ export default function ProjectDetailPage() {
     skipped: { text: 'スキップ', color: 'bg-neutral-100 text-neutral-400' },
   }
 
-  if (!project) return <p className="text-sm text-neutral-500">読み込み中...</p>
-
   const pendingCount = contacts.filter(c => c.status === 'pending').length
   const generatedCount = contacts.filter(c => c.status === 'generated').length
   const sentCount = contacts.filter(c => c.status === 'sent').length
   const selectedPendingCount = contacts.filter(c => selectedIds.has(c.contact_id) && c.status === 'pending').length
 
-  // Auto-dismiss toast
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), toast.type === 'error' ? 10000 : 5000)
-    return () => clearTimeout(t)
-  }, [toast])
+  if (!project) return <p className="text-sm text-neutral-500">読み込み中...</p>
 
   return (
     <div>
