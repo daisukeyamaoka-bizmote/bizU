@@ -4,7 +4,8 @@
   "name": "bizu2",
   "compatibility_date": "2025-09-27",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "global_fetch_strictly_public"
   ],
   "assets": {
     "directory": ".open-next/assets",
@@ -13,7 +14,7 @@
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "bizu"
+      "service": "bizu2"
     }
   ],
   "images": {
