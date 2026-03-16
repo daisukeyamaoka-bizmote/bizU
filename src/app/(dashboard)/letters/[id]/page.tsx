@@ -38,8 +38,8 @@ export default async function LetterDetailPage({
   return (
     <div>
       <div className="flex items-center gap-4">
-        <Link href="/letters" className="text-sm text-neutral-900 hover:underline">
-          ← 手紙一覧
+        <Link href="/letters" className="text-sm text-neutral-500 hover:text-neutral-900 hover:underline">
+          ← 手紙管理
         </Link>
         <h1 className="text-2xl font-bold text-neutral-900">手紙詳細</h1>
         {letter.is_approved ? (

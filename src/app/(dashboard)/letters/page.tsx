@@ -66,6 +66,7 @@ export default function LettersPage() {
       .from('letters')
       .select(`
         id, sent_at, why_you_angle, body_text, hypothesis, created_at,
+        is_approved, approved_by,
         contacts(full_name, department, title, target_companies(name)),
         clients(name)
       `)
@@ -232,7 +233,7 @@ export default function LettersPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-900">手紙一覧</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">手紙管理</h1>
       </div>
 
       {error && (
