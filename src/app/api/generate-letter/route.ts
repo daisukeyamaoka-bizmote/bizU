@@ -11,7 +11,14 @@ const SYSTEM_PROMPT = `あなたはBtoB企業向けのABM（Account Based Market
 
 {
   "title": "タイトル行のテキスト（○○業界における○○に関するご提案機会のお願い）",
-  "body_text": "手紙本文（マーカー付き、タイトル行は含めない）",
+  "body_text": "手紙本文（ソースマーカーなし、タイトル行は含めない）",
+  "personalization": {
+    "recipient": "宛先の要約（例: 高橋氏（執行役員 グループ人事部長）※製造業界20年→2022年入社。2024年1月に執行役員昇格）",
+    "why_you": "Why Youの要約（例: 「パーパス経営を支える人材戦略の推進と職種別採用の高度化に取り組まれている高橋様が…」← JACインタビュー記事の核心テーマ＋HR AGE記事の職種別採用改革を反映）",
+    "hypothesis": "課題仮説の要約（例: パーパス「すこやかな毎日、ゆたかな人生」のもと…ESだけでは見えにくい価値観や意欲を初期段階で把握することが一層重要）",
+    "case_study": "事例名（例: 三菱食品（同じ食品業界＋録画選考×AI→合格率20%上昇・採用期間2ヶ月短縮））",
+    "case_study_reason": "事例選定理由（例: 食品業界の同業事例であり業界親近感が高い。既に職種別採用の改革は進んでおり、次のステップとして「初期選考でのマッチング精度向上」にharutakaが位置づけられる）"
+  },
   "sources": [
     {
       "index": 1,
@@ -81,12 +88,10 @@ const SYSTEM_PROMPT = `あなたはBtoB企業向けのABM（Account Based Market
 - DX推進・データ活用志向 → 面接データの可視化→ナレッジ化→組織学習
 - 事業再編期・多忙な現場 → AI要約で面接官の負荷軽減
 
-【ソースマーカーのルール】
-- 本文中の事実情報（具体的な数値・固有名詞・出来事）に[①][②][③]等のマーカーを挿入
-- 例: 「採用件数が前年比40%増加[①]しておられることを拝察し」
-- sourcesには本文中の全ての具体的な数値・固有名詞・出来事を含める
+【ソースのルール】
+- 本文中にはソースマーカー[①][②]等を一切入れないこと。手紙本文はクリーンなテキストにする
+- ただしsources配列には、本文中で使用した全ての具体的な事実（数値・固有名詞・出来事）を記録する
 - 抽象的な表現はsourcesに含めない
-- マーカーの番号はsources配列のindexと対応させる
 - ソースは直近半年以内の情報に限定する
 
 【ナレッジ活用】
@@ -180,6 +185,7 @@ bizmote株式会社
 
     let letter = rawText
     let title = ''
+    let personalization = null
     let sources: Array<{
       index: number
       fact: string
@@ -199,6 +205,9 @@ bizmote株式会社
         }
         if (parsed.title) {
           title = parsed.title
+        }
+        if (parsed.personalization) {
+          personalization = parsed.personalization
         }
         if (Array.isArray(parsed.sources)) {
           const today = new Date()
@@ -225,7 +234,7 @@ bizmote株式会社
       // If JSON parsing fails, return raw text as letter body with no sources
     }
 
-    return NextResponse.json({ letter, title, sources })
+    return NextResponse.json({ letter, title, personalization, sources })
   } catch (error) {
     console.error('Letter generation error:', error)
     const errorMessage = error instanceof Error ? error.message : String(error)

@@ -8,8 +8,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <a href="/contacts" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>取引先管理</a>
           <a href="/knowledge" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>ナレッジ</a>
           <a href="/projects" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>手紙作成</a>
-          <a href="/letters" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>手紙一覧</a>
-          <a href="/reactions" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>反応記録</a>
+          <a href="/letters" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>手紙管理</a>
         </nav>
       </aside>
       <main style={{ flex: 1, overflow: 'auto' }}>

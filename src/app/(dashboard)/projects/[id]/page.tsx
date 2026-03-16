@@ -456,6 +456,7 @@ export default function ProjectDetailPage() {
               hypothesis: data.title ?? null,
               collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
               sources: data.sources ?? null,
+              personalization: data.personalization ?? null,
             }).select('id').single()
 
             if (letter) {
