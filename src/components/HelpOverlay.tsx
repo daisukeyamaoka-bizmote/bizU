@@ -1,7 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { Question, X } from '@phosphor-icons/react'
+
+function IconQuestion({ size = 20, className }: { size?: number; className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 256 256" className={className} fill="currentColor">
+      <path d="M140,180a12,12,0,1,1-12-12A12,12,0,0,1,140,180ZM128,72c-22.06,0-40,16.15-40,36v4a8,8,0,0,0,16,0v-4c0-11,10.77-20,24-20s24,9,24,20-10.77,20-24,20a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-.72c18.24-3.35,32-17.9,32-35.28C168,88.15,150.06,72,128,72Zm104,56A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z" />
+    </svg>
+  )
+}
+
+function IconX({ size = 18 }: { size?: number }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 256 256" fill="currentColor">
+      <path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" />
+    </svg>
+  )
+}
 
 const helpSections = [
   {
@@ -108,7 +123,7 @@ export default function HelpOverlay() {
         className="fixed bottom-6 left-6 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900 text-white shadow-lg transition-transform hover:scale-105 hover:bg-neutral-800 active:scale-95"
         title="ヘルプ"
       >
-        <Question size={22} weight="bold" />
+        <IconQuestion size={22} />
       </button>
 
       {/* Overlay */}
@@ -121,23 +136,18 @@ export default function HelpOverlay() {
           />
 
           {/* Panel */}
-          <div
-            className="relative flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-neutral-200 bg-white shadow-2xl"
-            style={{
-              animation: 'helpSlideUp 0.2s ease-out',
-            }}
-          >
+          <div className="relative flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-neutral-200 bg-white shadow-2xl animate-[helpSlideUp_0.2s_ease-out]">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
               <div className="flex items-center gap-2.5">
-                <Question size={20} weight="bold" className="text-neutral-900" />
+                <IconQuestion size={20} className="text-neutral-900" />
                 <h2 className="text-base font-semibold text-neutral-900">ヘルプ・使い方ガイド</h2>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
                 className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
               >
-                <X size={18} />
+                <IconX size={18} />
               </button>
             </div>
 
@@ -180,20 +190,6 @@ export default function HelpOverlay() {
           </div>
         </div>
       )}
-
-      {/* Animation keyframes */}
-      <style jsx global>{`
-        @keyframes helpSlideUp {
-          from {
-            opacity: 0;
-            transform: translateY(12px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </>
   )
 }
