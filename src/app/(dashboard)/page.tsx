@@ -189,7 +189,6 @@ export default function DashboardPage() {
   }
 
   const whyYouRanking = useMemo(() => computeRanking(l => l.why_you_angle), [filteredLetters, filteredReactionMap])
-  const triggerRanking = useMemo(() => computeRanking(l => l.send_trigger), [filteredLetters, filteredReactionMap])
   const industryRanking = useMemo(() => computeRanking(l => {
     return l.company_id ? (industryMap.get(l.company_id) ?? null) : null
   }), [filteredLetters, filteredReactionMap, industryMap])
@@ -203,6 +202,78 @@ export default function DashboardPage() {
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
   }, [filteredReactions])
+
+  // 定性インサイト生成
+  const insights = useMemo(() => {
+    const result: string[] = []
+    const sentLetters = filteredLetters.filter(l => l.sent_at)
+    if (sentLetters.length === 0) return result
+
+    // Best performing angle
+    if (whyYouRanking.length > 0) {
+      const best = whyYouRanking[0]
+      if (parseFloat(best.rate) > 0) {
+        result.push(`「${best.label}」の切り口が最も反応率が高く${best.rate}%（${best.reacted}/${best.sent}件）です。`)
+      }
+      if (whyYouRanking.length >= 2) {
+        const worst = whyYouRanking[whyYouRanking.length - 1]
+        if (parseFloat(worst.rate) === 0 && worst.sent >= 3) {
+          result.push(`「${worst.label}」は${worst.sent}件送付で反応ゼロです。切り口の見直しを検討してください。`)
+        }
+      }
+    }
+
+    // Best performing industry
+    if (industryRanking.length > 0) {
+      const best = industryRanking[0]
+      if (parseFloat(best.rate) > 0) {
+        result.push(`業種別では「${best.label}」が反応率${best.rate}%と最も効果的です。`)
+      }
+    }
+
+    // Reaction velocity insight
+    const daysToReactList = filteredReactions
+      .filter(r => r.days_to_react !== null && r.days_to_react >= 0)
+      .map(r => r.days_to_react!)
+    if (daysToReactList.length >= 3) {
+      const avg = daysToReactList.reduce((a, b) => a + b, 0) / daysToReactList.length
+      const fast = daysToReactList.filter(d => d <= 7).length
+      const fastPct = ((fast / daysToReactList.length) * 100).toFixed(0)
+      if (avg <= 7) {
+        result.push(`平均${avg.toFixed(1)}日で反応を獲得。反応速度は良好です。`)
+      } else if (avg <= 14) {
+        result.push(`反応までの平均日数は${avg.toFixed(1)}日。${fastPct}%が1週間以内に反応しています。`)
+      } else {
+        result.push(`反応まで平均${avg.toFixed(1)}日かかっています。送付タイミングの最適化で短縮できる可能性があります。`)
+      }
+    }
+
+    // Deal conversion pattern
+    const deals = filteredReactions.filter(r => r.reaction_type === '商談化')
+    const replies = filteredReactions.filter(r => r.reaction_type === '返信あり')
+    if (deals.length > 0 && replies.length > 0) {
+      const convRate = ((deals.length / (deals.length + replies.length)) * 100).toFixed(0)
+      result.push(`返信のうち${convRate}%が商談化に至っています。`)
+    }
+
+    // Overall reaction rate assessment
+    const totalReactions = filteredReactions.length
+    const reactionRate = totalReactions / sentLetters.length
+    if (sentLetters.length >= 5) {
+      if (reactionRate >= 0.1) {
+        result.push(`全体反応率${(reactionRate * 100).toFixed(1)}%はDM施策として高い水準です。`)
+      } else if (reactionRate > 0) {
+        result.push(`反応率${(reactionRate * 100).toFixed(1)}%。送付先の精査と切り口の見直しで改善の余地があります。`)
+      }
+    }
+
+    // No reaction yet
+    if (sentLetters.length > 0 && totalReactions === 0) {
+      result.push('送付済みの手紙にまだ反応がありません。フォローコールを検討してください。')
+    }
+
+    return result
+  }, [filteredLetters, filteredReactions, whyYouRanking, industryRanking])
 
   const selectedProject = projects.find(p => p.id === selectedProjectId)
 
@@ -291,12 +362,26 @@ export default function DashboardPage() {
       {/* インテリジェンス */}
       <div className="mt-8">
         <h2 className="text-lg font-semibold text-neutral-900">インテリジェンス</h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <RankingCard title="Why You別 反応率" items={whyYouRanking} />
-          <RankingCard title="トリガー別 反応率" items={triggerRanking} />
           <RankingCard title="業種別 反応率" items={industryRanking} />
         </div>
       </div>
+
+      {/* 定性インサイト */}
+      {insights.length > 0 && (
+        <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-5">
+          <h3 className="text-sm font-semibold text-neutral-900">状況サマリー</h3>
+          <ul className="mt-3 space-y-2">
+            {insights.map((text, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-neutral-700">
+                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400" />
+                {text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* データ資産（全体のみ） */}
       {selectedProjectId === 'all' && (
