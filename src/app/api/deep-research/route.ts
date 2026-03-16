@@ -4,14 +4,10 @@ import { getAnthropicApiKey } from '@/lib/anthropic'
 export const dynamic = 'force-dynamic'
 
 /**
- * Deep Research API - ABMワークフロー準拠
+ * Deep Research API - ABMワークフロー準拠（2ステップ統合版）
  *
- * Steps:
- * 1. 役職の最新確認（最重要ステップ）
- * 2. 企業リサーチ（IR・中計・採用体制・人事戦略）
- * 3. 宛先個人リサーチ（インタビュー・講演・経歴・課題感）
- * 4. プロダクト適合性分析（ナレッジベース活用）
- * 5. Why You分析
+ * Step 1: Web検索で包括的リサーチ（役職確認・企業・人物を1回で）
+ * Step 2: 分析（プロダクト適合性 + Why You を1回で）
  */
 export async function POST(request: Request) {
   try {
@@ -25,131 +21,54 @@ export async function POST(request: Request) {
 
     const apiKey = await getAnthropicApiKey()
 
-    // Steps 1-3: 並列実行（互いに独立したリサーチ）
-    const [roleVerification, companyResearch, personResearch] = await Promise.all([
-      // Step 1: 役職の最新確認（最重要ステップ）
-      webSearchClaude(apiKey, `以下の人物の現在の役職を確認してください。これは手紙送付のための最重要確認事項です。
+    // Step 1: 包括的Web検索リサーチ（役職確認 + 企業 + 人物を1回で実行）
+    const researchResult = await webSearchClaude(apiKey, `あなたはABM営業のためのディープリサーチャーです。以下の企業・人物について包括的にWebで検索し、情報をまとめてください。
 
+【対象】
 企業名: ${companyName}
 氏名: ${contactName}
 登録役職: ${contactTitle ?? '不明'}
 部署: ${contactDepartment ?? '不明'}
 
-以下を全てチェックし、確認結果を報告してください:
+以下の3つのセクションに分けて報告してください:
 
-1. 【公式サイト役員一覧】${companyName}の公式サイトの役員一覧ページで現在の役職を確認
-2. 【直近の人事異動】プレスリリースや人事異動ニュースで異動・退任・昇格がないか確認
-3. 【日経人事記事】日経新聞の人事異動記事を検索
-4. 【異動ニュースサイト】relocation-personnel.com等の人事異動サイトを確認
+===== セクション1: 役職の最新確認 =====
+- ${companyName}の公式サイトで${contactName}の現在の役職を確認
+- 直近の人事異動ニュースで異動・退任・昇格がないか確認
+- 現在の役職、役職変更有無、宛先適切性を報告
 
-確認結果を以下の形式で報告:
-- 現在の役職: （確認した最新の役職）
-- 役職変更有無: あり/なし（変更があった場合は詳細を記載）
-- 宛先適切性: 適切/要検討（人事・採用の意思決定者として適切かの判断）
-- 注意事項: （CFO兼務の場合や人事専任でない場合のリスク等）
-- 確認ソース: （確認に使用したURL）
+===== セクション2: 企業リサーチ =====
+- 中期経営計画・重点戦略
+- 採用体制（新卒/中途、採用人数）
+- 人事戦略・人的資本経営の取り組み
+- 直近のニュース（M&A、決算、組織変更）
 
-【注意事項】
-- 古い役職で手紙を送ると信頼性が致命的に損なわれるため、必ず最新情報を確認する
-- 人事専任のCHROがいない企業でCFOや管理本部長が人事を兼務している場合、その人が本当に適切な宛先か検討する
-- CFO兼任の場合、本人が人事・採用について具体的にインタビュー等で語っているかを確認する`, 8),
+===== セクション3: 人物リサーチ =====
+- ${contactName}のインタビュー記事・講演・セミナー登壇
+- 経歴（前職、専門分野、現職就任時期）
+- 本人が語っている課題感・注力テーマ
+- 人事・採用に関する具体的な発言
 
-      // Step 2: 企業リサーチ
-      webSearchClaude(apiKey, `以下の日本企業について、ABM営業手紙作成に必要な情報をWebで検索してまとめてください。ソースは直近半年以内に限定してください。
+各項目は具体的な数値と出典URL を含めてください。情報がない項目はスキップ。
+ソースは直近半年以内を優先。必ずWebで検索してから回答してください。`, 15)
 
-企業名: ${companyName}
+    // リサーチ結果をセクション分割
+    const roleVerification = extractSection(researchResult, 'セクション1', 'セクション2')
+    const companyResearch = extractSection(researchResult, 'セクション2', 'セクション3')
+    const personResearch = extractSection(researchResult, 'セクション3', null)
 
-以下の観点で情報を整理してください:
-
-1. 【中期経営計画・事業構造】
-   - 中計の名称、期間、重点戦略、数値目標
-   - 事業構造（拠点、事業領域、組織再編）
-
-2. 【採用体制】
-   - 新卒/中途比率、採用人数、採用拠点
-   - 採用に関する直近のニュースや取り組み
-
-3. 【人事戦略・人的資本経営】
-   - 人的資本経営の取り組み
-   - 人事制度改革、定年引上げ等
-
-4. 【直近のニュース】
-   - M&A、事業再編、新規事業
-   - 決算情報、業績動向
-
-5. 【組織変更】
-   - 直近の組織再編、部門統廃合
-
-各項目は具体的な数値と出典情報（URL含む）を含めてください。情報がない項目はスキップ。
-必ずWebで検索してから回答してください。`, 8),
-
-      // Step 3: 宛先個人リサーチ（最も重要）
-      webSearchClaude(apiKey, `以下の人物について、最新の情報をWebで検索してまとめてください。ソースは直近半年以内を優先してください。
-
-企業名: ${companyName}
-氏名: ${contactName}
-役職: ${contactTitle ?? ''}
-部署: ${contactDepartment ?? ''}
-
-以下の観点で情報を整理してください（これが手紙のパーソナライゼーションの核心です）:
-
-1. 【インタビュー記事・講演情報・セミナー登壇】
-   - この方が登場する最新の記事、インタビュー内容
-   - 講演・セミナーでの発言内容
-   - 具体的な引用があれば記載
-
-2. 【経歴】
-   - 前職、専門分野、現職就任時期
-   - キャリアの特徴
-
-3. 【本人が語っている課題感・注力テーマ】
-   - 記事やインタビューで語られている課題意識
-   - 注力しているプロジェクトやテーマ
-   - 人事・採用に関する具体的な発言
-
-4. 【外部活動】
-   - 業界団体での活動
-   - 寄稿、書籍出版
-   - SNS活動
-
-具体的な記事タイトル、日付、URLを含めてください。情報がない項目はスキップ。
-必ずWebで検索してから回答してください。`, 8),
-    ])
-
-    // Step 4: プロダクト適合性分析（Claude通常呼び出し、Web検索不要）
-    let productFitAnalysis = ''
+    // Step 2: プロダクト適合性 + Why You 統合分析（Web検索不要）
+    let knowledgeSection = ''
     if (knowledgeContext && knowledgeContext.length > 0) {
       const knowledgeText = knowledgeContext
         .map((k: { category: string; title: string; content: string }) =>
           `[${k.category}] ${k.title}\n${k.content}`)
         .join('\n\n')
-
-      productFitAnalysis = await callClaudeText(apiKey, `あなたはBtoB営業戦略のエキスパートです。
-以下の企業情報とプロダクトのナレッジを照合し、プロダクトの適合性を分析してください。
-
-【対象企業】${companyName}
-【企業リサーチ結果】
-${companyResearch}
-
-【宛先個人の情報】
-${personResearch}
-
-【プロダクトナレッジ】
-${knowledgeText}
-
-以下の観点で分析してください:
-1. 【課題仮説】企業の経営課題・注力領域に対して、プロダクトがどの課題を解決できるか
-2. 【フィットポイント】中期経営計画や注力テーマとプロダクトの接点
-3. 【推奨事例】ナレッジ内の事例から、この宛先に最適な事例はどれか（関心軸から逆算）
-4. 【推奨アプローチ角度】手紙で訴求すべきポイント（具体的に）
-5. 【注意点】避けるべきトピックやアプローチ
-
-簡潔かつ具体的に。`)
+      knowledgeSection = `\n【プロダクトナレッジ】\n${knowledgeText}`
     }
 
-    // Step 5: Why You 分析
-    const whyYouAnalysis = await callClaudeText(apiKey, `あなたはBtoB営業のパーソナライゼーション専門家です。
-以下の情報をもとに「なぜこの方に手紙を書くのか」の理由を明確にしてください。
+    const analysis = await callClaudeText(apiKey, `あなたはBtoB営業戦略のエキスパートです。
+以下の情報をもとに、プロダクト適合性分析とWhy You分析を行ってください。
 
 【対象者】
 氏名: ${contactName}
@@ -165,19 +84,26 @@ ${companyResearch}
 
 【人物リサーチ】
 ${personResearch}
+${knowledgeSection}
 
-${productFitAnalysis ? `【プロダクト適合性分析】\n${productFitAnalysis}` : ''}
+===== Part A: プロダクト適合性分析 =====
+1. 課題仮説: 企業の経営課題に対してプロダクトが解決できること
+2. フィットポイント: 中計や注力テーマとの接点
+3. 推奨事例: ナレッジ内から最適な事例（あれば）
+4. 推奨アプローチ角度
+5. 注意点
 
-以下を出力してください:
-1. 【Why You（なぜあなたに）】この方にこそ連絡すべき理由（役職・権限・取り組みテーマとの関連）
-2. 【パーソナライズポイント】手紙に入れるべきこの方固有のフック（記事内容、発言、人事異動など）
-   - 宛先個人のインタビュー記事で語られている言葉やテーマがあれば、具体的に引用
-3. 【推奨送付トリガー】今この時期に送る理由（決算、人事異動、新規事業発表など）
-4. 【推奨書き出し】手紙の冒頭で使える具体的なフレーズ案（2-3パターン）
-   - 「CHROとして〜」「人事本部を統括されている〜」等、役職に触れる書き出し
-5. 【宛先適切性の判断】この方が人事・採用の意思決定者として適切かどうかの判断と理由
+===== Part B: Why You分析 =====
+1. Why You: この方にこそ連絡すべき理由
+2. パーソナライズポイント: 手紙に入れるべき固有フック（記事・発言・人事異動等）
+3. 推奨送付トリガー: 今この時期に送る理由
+4. 推奨書き出し: 手紙冒頭のフレーズ案（2-3パターン）
+5. 宛先適切性の判断
 
 簡潔かつ具体的に。`)
+
+    const productFitAnalysis = extractSection(analysis, 'Part A', 'Part B')
+    const whyYouAnalysis = extractSection(analysis, 'Part B', null)
 
     return NextResponse.json({
       roleVerification,
@@ -194,6 +120,22 @@ ${productFitAnalysis ? `【プロダクト適合性分析】\n${productFitAnalys
       { status: 500 }
     )
   }
+}
+
+/** セクション抽出ヘルパー */
+function extractSection(text: string, startMarker: string, endMarker: string | null): string {
+  const startIdx = text.indexOf(startMarker)
+  if (startIdx === -1) return endMarker ? '' : text
+
+  const contentStart = text.indexOf('\n', startIdx)
+  if (contentStart === -1) return ''
+
+  if (endMarker) {
+    const endIdx = text.indexOf(endMarker, contentStart)
+    if (endIdx === -1) return text.slice(contentStart).trim()
+    return text.slice(contentStart, endIdx).trim()
+  }
+  return text.slice(contentStart).trim()
 }
 
 /** 429レート制限時に指数バックオフでリトライ */
@@ -237,7 +179,7 @@ async function fetchWithRetry(
 async function webSearchClaude(apiKey: string, prompt: string, maxSearchUses = 5): Promise<string> {
   const data = await fetchWithRetry(apiKey, {
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+    max_tokens: 4096,
     tools: [
       {
         type: 'web_search_20250305',
@@ -259,7 +201,7 @@ async function webSearchClaude(apiKey: string, prompt: string, maxSearchUses = 5
 async function callClaudeText(apiKey: string, prompt: string): Promise<string> {
   const data = await fetchWithRetry(apiKey, {
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
+    max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
   })
 
