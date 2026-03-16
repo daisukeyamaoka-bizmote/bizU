@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 type RankItem = { label: string; rate: string; sent: number; reacted: number }
 
 export default async function DashboardPage() {
