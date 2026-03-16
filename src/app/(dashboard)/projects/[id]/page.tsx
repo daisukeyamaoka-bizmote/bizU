@@ -342,14 +342,14 @@ export default function ProjectDetailPage() {
           }),
         })
 
-        // 進捗をシミュレーション表示（実際のAPIは内部で5ステップ実行）
-        await delay(3000)
+        // 進捗をシミュレーション表示（実際のAPIは内部でステップ1-3並列＋4-5直列実行）
+        await delay(2000)
         updateProgress(pc.contact_id, 'company', '企業の中計・採用体制を調査中...')
-        await delay(3000)
+        await delay(2000)
         updateProgress(pc.contact_id, 'person', '担当者のインタビュー・講演情報を調査中...')
-        await delay(3000)
+        await delay(2000)
         updateProgress(pc.contact_id, 'fit', 'プロダクト適合性・事例選定を分析中...')
-        await delay(3000)
+        await delay(2000)
         updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
 
         const researchRes = await researchPromise

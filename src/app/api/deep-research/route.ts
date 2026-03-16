@@ -25,8 +25,10 @@ export async function POST(request: Request) {
 
     const apiKey = await getAnthropicApiKey()
 
-    // Step 1: 役職の最新確認（最重要ステップ）
-    const roleVerification = await webSearchClaude(apiKey, `以下の人物の現在の役職を確認してください。これは手紙送付のための最重要確認事項です。
+    // Steps 1-3: 並列実行（互いに独立したリサーチ）
+    const [roleVerification, companyResearch, personResearch] = await Promise.all([
+      // Step 1: 役職の最新確認（最重要ステップ）
+      webSearchClaude(apiKey, `以下の人物の現在の役職を確認してください。これは手紙送付のための最重要確認事項です。
 
 企業名: ${companyName}
 氏名: ${contactName}
@@ -50,13 +52,10 @@ export async function POST(request: Request) {
 【注意事項】
 - 古い役職で手紙を送ると信頼性が致命的に損なわれるため、必ず最新情報を確認する
 - 人事専任のCHROがいない企業でCFOや管理本部長が人事を兼務している場合、その人が本当に適切な宛先か検討する
-- CFO兼任の場合、本人が人事・採用について具体的にインタビュー等で語っているかを確認する`, 8)
+- CFO兼任の場合、本人が人事・採用について具体的にインタビュー等で語っているかを確認する`, 8),
 
-    // レート制限回避: API呼び出し間にディレイを挿入
-    await new Promise(r => setTimeout(r, 5000))
-
-    // Step 2: 企業リサーチ
-    const companyResearch = await webSearchClaude(apiKey, `以下の日本企業について、ABM営業手紙作成に必要な情報をWebで検索してまとめてください。ソースは直近半年以内に限定してください。
+      // Step 2: 企業リサーチ
+      webSearchClaude(apiKey, `以下の日本企業について、ABM営業手紙作成に必要な情報をWebで検索してまとめてください。ソースは直近半年以内に限定してください。
 
 企業名: ${companyName}
 
@@ -82,12 +81,10 @@ export async function POST(request: Request) {
    - 直近の組織再編、部門統廃合
 
 各項目は具体的な数値と出典情報（URL含む）を含めてください。情報がない項目はスキップ。
-必ずWebで検索してから回答してください。`, 8)
+必ずWebで検索してから回答してください。`, 8),
 
-    await new Promise(r => setTimeout(r, 5000))
-
-    // Step 3: 宛先個人リサーチ（最も重要）
-    const personResearch = await webSearchClaude(apiKey, `以下の人物について、最新の情報をWebで検索してまとめてください。ソースは直近半年以内を優先してください。
+      // Step 3: 宛先個人リサーチ（最も重要）
+      webSearchClaude(apiKey, `以下の人物について、最新の情報をWebで検索してまとめてください。ソースは直近半年以内を優先してください。
 
 企業名: ${companyName}
 氏名: ${contactName}
@@ -116,9 +113,8 @@ export async function POST(request: Request) {
    - SNS活動
 
 具体的な記事タイトル、日付、URLを含めてください。情報がない項目はスキップ。
-必ずWebで検索してから回答してください。`, 8)
-
-    await new Promise(r => setTimeout(r, 5000))
+必ずWebで検索してから回答してください。`, 8),
+    ])
 
     // Step 4: プロダクト適合性分析（Claude通常呼び出し、Web検索不要）
     let productFitAnalysis = ''
@@ -150,8 +146,6 @@ ${knowledgeText}
 
 簡潔かつ具体的に。`)
     }
-
-    await new Promise(r => setTimeout(r, 5000))
 
     // Step 5: Why You 分析
     const whyYouAnalysis = await callClaudeText(apiKey, `あなたはBtoB営業のパーソナライゼーション専門家です。
