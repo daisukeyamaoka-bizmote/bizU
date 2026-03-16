@@ -399,6 +399,10 @@ export default function ProjectDetailPage() {
             deepResearch,
           }),
         })
+        if (!res.ok) {
+          console.error('[generate-letter] API error:', res.status, await res.text())
+          continue
+        }
         const data = await res.json()
 
         if (data.letter) {
@@ -421,7 +425,8 @@ export default function ProjectDetailPage() {
               .eq('id', pc.id)
           }
         }
-      } catch {
+      } catch (err) {
+        console.error('[generate-letter] Exception:', err)
         // 個別エラー時は次へ進む
       }
 

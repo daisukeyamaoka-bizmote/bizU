@@ -186,8 +186,9 @@ ${productFitAnalysis ? `【プロダクト適合性分析】\n${productFitAnalys
     })
   } catch (error) {
     console.error('Deep research error:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { error: 'リサーチに失敗しました' },
+      { error: 'リサーチに失敗しました', detail: errorMessage },
       { status: 500 }
     )
   }

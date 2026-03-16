@@ -229,8 +229,9 @@ bizmote株式会社
     return NextResponse.json({ letter, title, sources })
   } catch (error) {
     console.error('Letter generation error:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { error: '手紙の生成に失敗しました' },
+      { error: '手紙の生成に失敗しました', detail: errorMessage },
       { status: 500 }
     )
   }
