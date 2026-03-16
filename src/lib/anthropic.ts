@@ -9,16 +9,33 @@ interface AnthropicResponse {
   content: Array<{ type: string; text?: string }>
 }
 
+/** Cloudflare Workers + ローカル両対応のAPIキー取得 */
+export async function getAnthropicApiKey(): Promise<string> {
+  // 1. process.env（ローカル開発時）
+  if (process.env.ANTHROPIC_API_KEY) {
+    return process.env.ANTHROPIC_API_KEY
+  }
+
+  // 2. Cloudflare Workers環境変数（getCloudflareContext経由）
+  try {
+    const { getCloudflareContext } = await import('@opennextjs/cloudflare')
+    const { env } = await getCloudflareContext({ async: true })
+    const key = (env as Record<string, unknown>).ANTHROPIC_API_KEY as string | undefined
+    if (key) return key
+  } catch {
+    // ローカル開発時はgetCloudflareContextが使えない場合がある
+  }
+
+  throw new Error('ANTHROPIC_API_KEY が設定されていません')
+}
+
 export async function callClaude(options: {
   messages: AnthropicMessage[]
   system?: string
   model?: string
   max_tokens?: number
 }): Promise<AnthropicResponse> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY が設定されていません')
-  }
+  const apiKey = await getAnthropicApiKey()
 
   const body: Record<string, unknown> = {
     model: options.model ?? 'claude-sonnet-4-20250514',

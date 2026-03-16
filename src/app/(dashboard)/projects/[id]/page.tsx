@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useNotification } from '@/lib/useNotification'
 
 type Project = {
   id: string
@@ -68,6 +69,8 @@ export default function ProjectDetailPage() {
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [addingContacts, setAddingContacts] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const { requestPermission, notify } = useNotification()
 
   const loadProject = useCallback(async () => {
     const supabase = createClient()
@@ -281,6 +284,7 @@ export default function ProjectDetailPage() {
     const targets = contacts.filter(c => selectedIds.has(c.contact_id) && c.status === 'pending')
     if (targets.length === 0) return
 
+    requestPermission()
     setPipelineRunning(true)
     setPipelineTotal(targets.length)
     setPipelineProgress([])
@@ -349,11 +353,16 @@ export default function ProjectDetailPage() {
         updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
 
         const researchRes = await researchPromise
-        const researchData = await researchRes.json()
-        if (!researchData.error) {
-          deepResearch = researchData
+        if (!researchRes.ok) {
+          console.error('[deep-research] API error:', researchRes.status, await researchRes.text())
+        } else {
+          const researchData = await researchRes.json()
+          if (!researchData.error) {
+            deepResearch = researchData
+          }
         }
-      } catch {
+      } catch (err) {
+        console.error('[deep-research] Exception:', err)
         // リサーチ失敗時も手紙生成は続行
       }
 
@@ -419,8 +428,11 @@ export default function ProjectDetailPage() {
       updateProgress(pc.contact_id, 'done', '完了')
     }
 
+    const successCount = pipelineProgress.filter(p => p.step === 'done').length + 1
     setPipelineRunning(false)
     setSelectedIds(new Set())
+    setToast({ message: `${targets.length}社の手紙生成が完了しました！`, type: 'success' })
+    notify('手紙生成完了', `${targets.length}社のリサーチ＋手紙生成が完了しました`)
     loadContacts()
     loadProject()
   }
@@ -477,8 +489,25 @@ export default function ProjectDetailPage() {
   const sentCount = contacts.filter(c => c.status === 'sent').length
   const selectedPendingCount = contacts.filter(c => selectedIds.has(c.contact_id) && c.status === 'pending').length
 
+  // Auto-dismiss toast
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), toast.type === 'error' ? 10000 : 5000)
+    return () => clearTimeout(t)
+  }, [toast])
+
   return (
     <div>
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed right-4 top-4 z-50 rounded-lg px-4 py-3 text-sm shadow-lg ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+        }`}>
+          {toast.message}
+          <button onClick={() => setToast(null)} className="ml-3 opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
       <div className="flex items-center gap-4">
         <Link href="/projects" className="text-sm text-neutral-900 hover:underline">&larr; プロジェクト一覧</Link>
       </div>

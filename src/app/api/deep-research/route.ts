@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getAnthropicApiKey } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,10 +24,7 @@ export async function POST(request: Request) {
       knowledgeContext,
     } = await request.json()
 
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY が設定されていません')
-    }
+    const apiKey = await getAnthropicApiKey()
 
     // Step 1: 役職の最新確認（最重要ステップ）
     const roleVerification = await webSearchClaude(apiKey, `以下の人物の現在の役職を確認してください。これは手紙送付のための最重要確認事項です。
