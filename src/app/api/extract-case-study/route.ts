@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 
-export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業で使えるケーススタディ情報を抽出してください。

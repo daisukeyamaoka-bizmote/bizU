@@ -8,8 +8,6 @@ import {
   UnderlineType,
 } from 'docx'
 
-export const runtime = 'nodejs'
-
 // A4 page dimensions in DXA
 const PAGE_WIDTH = 11906
 const PAGE_HEIGHT = 16838

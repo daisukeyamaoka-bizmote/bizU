@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 
-export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 const SYSTEM_PROMPT = `あなたはBtoB企業向けのABM（Account Based Marketing）営業手紙を作成するエキスパートです。

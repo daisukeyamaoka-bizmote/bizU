@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 
-export const runtime = 'nodejs'
 
 export async function GET() {
   // 1. process.env チェック

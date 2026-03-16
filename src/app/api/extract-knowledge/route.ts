@@ -3,7 +3,6 @@ import { callClaude, getTextFromResponse } from '@/lib/anthropic'
 import * as XLSX from 'xlsx'
 import mammoth from 'mammoth'
 
-export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const EXTRACTION_PROMPT = `以下のテキストから、BtoB営業に活用できるナレッジ情報を抽出してください。

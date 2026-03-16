@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 
-export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {

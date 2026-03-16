@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAnthropicApiKey } from '@/lib/anthropic'
 
-export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 /**
