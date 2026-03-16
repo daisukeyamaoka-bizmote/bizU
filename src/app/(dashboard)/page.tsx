@@ -1,83 +1,179 @@
+'use client'
+
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/client'
 
-export const dynamic = 'force-dynamic'
+type Project = {
+  id: string
+  name: string
+  client_name: string
+  why_you_angle: string | null
+  status: string
+}
 
-type RankItem = { label: string; rate: string; sent: number; reacted: number }
+type LetterData = {
+  id: string
+  project_id: string | null
+  why_you_angle: string
+  send_trigger: string | null
+  sent_at: string | null
+  created_at: string
+  company_id: string | null
+}
 
-export default async function DashboardPage() {
-  const supabase = await createClient()
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-  const today = now.toISOString().split('T')[0]
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0]
-  const sixMonthsAgo = new Date(now.getTime() - 180 * 86400000).toISOString().split('T')[0]
+type ReactionData = {
+  letter_id: string
+  reaction_type: string
+  reacted_at: string | null
+  days_to_react: number | null
+}
 
-  // ===== 今月の実績 KPI =====
-  const { count: sentCount } = await supabase
-    .from('letters')
-    .select('*', { count: 'exact', head: true })
-    .gte('sent_at', startOfMonth)
+type CompanyData = {
+  id: string
+  industry: string
+}
 
-  const { count: reactionCount } = await supabase
-    .from('reactions')
-    .select('*', { count: 'exact', head: true })
-    .gte('reacted_at', startOfMonth)
+export default function DashboardPage() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all')
+  const [letters, setLetters] = useState<LetterData[]>([])
+  const [reactions, setReactions] = useState<ReactionData[]>([])
+  const [companies, setCompanies] = useState<CompanyData[]>([])
+  const [totalCompanyCount, setTotalCompanyCount] = useState(0)
+  const [loading, setLoading] = useState(true)
 
-  const { count: dealCount } = await supabase
-    .from('reactions')
-    .select('*', { count: 'exact', head: true })
-    .eq('reaction_type', '商談化')
-    .gte('reacted_at', startOfMonth)
+  useEffect(() => {
+    loadData()
+  }, [])
 
-  const sent = sentCount ?? 0
-  const reactions = reactionCount ?? 0
-  const deals = dealCount ?? 0
-  const reactionRate = sent > 0 ? ((reactions / sent) * 100).toFixed(1) : '0.0'
+  async function loadData() {
+    const supabase = createClient()
 
-  // データ資産カウント
-  const { count: totalSentCount } = await supabase.from('letters').select('*', { count: 'exact', head: true }).not('sent_at', 'is', null)
-  const { count: totalCompanyCount } = await supabase.from('target_companies').select('*', { count: 'exact', head: true })
-  const totalSent = totalSentCount ?? 0
-  const totalCompanies = totalCompanyCount ?? 0
+    const [
+      { data: projectsData },
+      { data: lettersData },
+      { data: reactionsData },
+      { data: companiesData },
+      { count: companyCount },
+    ] = await Promise.all([
+      supabase
+        .from('projects')
+        .select('id, name, why_you_angle, status, clients(name)')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('letters')
+        .select('id, project_id, why_you_angle, send_trigger, sent_at, created_at, contacts(company_id)')
+        .limit(1000),
+      supabase
+        .from('reactions')
+        .select('letter_id, reaction_type, reacted_at, days_to_react'),
+      supabase
+        .from('target_companies')
+        .select('id, industry'),
+      supabase
+        .from('target_companies')
+        .select('*', { count: 'exact', head: true }),
+    ])
 
-  // ===== インテリジェンスサマリー =====
-  const { data: allLetters } = await supabase
-    .from('letters')
-    .select(`
-      id, why_you_angle, send_trigger, sent_at,
-      contacts(company_id)
-    `)
-    .not('sent_at', 'is', null)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setProjects((projectsData ?? []).map((p: any) => {
+      const client = Array.isArray(p.clients) ? p.clients[0] : p.clients
+      return { ...p, client_name: client?.name ?? '' }
+    }))
 
-  const { data: allReactions } = await supabase
-    .from('reactions')
-    .select('letter_id, reaction_type')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setLetters((lettersData ?? []).map((l: any) => {
+      const contact = Array.isArray(l.contacts) ? l.contacts[0] : l.contacts
+      return { ...l, company_id: contact?.company_id ?? null }
+    }))
 
-  // 企業の業種マップ
-  const { data: companies } = await supabase
-    .from('target_companies')
-    .select('id, industry')
-  const industryMap = new Map((companies ?? []).map(c => [c.id, c.industry]))
-
-  const reactionMap = new Map<string, string>()
-  for (const r of allReactions ?? []) {
-    if (r.letter_id) reactionMap.set(r.letter_id, r.reaction_type)
+    setReactions(reactionsData ?? [])
+    setCompanies(companiesData ?? [])
+    setTotalCompanyCount(companyCount ?? 0)
+    setLoading(false)
   }
 
-  // 集計ヘルパー
+  // フィルタリング
+  const filteredLetters = useMemo(() => {
+    if (selectedProjectId === 'all') return letters
+    return letters.filter(l => l.project_id === selectedProjectId)
+  }, [letters, selectedProjectId])
+
+  const filteredReactionMap = useMemo(() => {
+    const letterIds = new Set(filteredLetters.map(l => l.id))
+    const map = new Map<string, ReactionData>()
+    for (const r of reactions) {
+      if (letterIds.has(r.letter_id)) map.set(r.letter_id, r)
+    }
+    return map
+  }, [filteredLetters, reactions])
+
+  const filteredReactions = useMemo(() => {
+    const letterIds = new Set(filteredLetters.map(l => l.id))
+    return reactions.filter(r => letterIds.has(r.letter_id))
+  }, [filteredLetters, reactions])
+
+  const industryMap = useMemo(() => {
+    return new Map(companies.map(c => [c.id, c.industry]))
+  }, [companies])
+
+  // KPI計算
+  const stats = useMemo(() => {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+
+    const sentLetters = filteredLetters.filter(l => l.sent_at)
+    const sentThisMonth = sentLetters.filter(l => l.sent_at! >= startOfMonth)
+    const reactionsThisMonth = filteredReactions.filter(r => r.reacted_at && r.reacted_at >= startOfMonth)
+    const dealsThisMonth = reactionsThisMonth.filter(r => r.reaction_type === '商談化')
+
+    const totalSent = sentLetters.length
+    const totalGenerated = filteredLetters.length
+    const totalReactions = filteredReactions.length
+    const totalDeals = filteredReactions.filter(r => r.reaction_type === '商談化').length
+    const totalReplies = filteredReactions.filter(r => ['返信あり', '商談化'].includes(r.reaction_type)).length
+
+    const reactionRate = totalSent > 0 ? ((totalReplies / totalSent) * 100).toFixed(1) : '0.0'
+    const dealRate = totalSent > 0 ? ((totalDeals / totalSent) * 100).toFixed(1) : '0.0'
+
+    // 平均反応日数
+    const daysToReactList = filteredReactions
+      .filter(r => r.days_to_react !== null && r.days_to_react >= 0)
+      .map(r => r.days_to_react!)
+    const avgDaysToReact = daysToReactList.length > 0
+      ? (daysToReactList.reduce((a, b) => a + b, 0) / daysToReactList.length).toFixed(1)
+      : '-'
+
+    return {
+      sentThisMonth: sentThisMonth.length,
+      reactionsThisMonth: reactionsThisMonth.length,
+      dealsThisMonth: dealsThisMonth.length,
+      reactionRateThisMonth: sentThisMonth.length > 0
+        ? ((reactionsThisMonth.length / sentThisMonth.length) * 100).toFixed(1) : '0.0',
+      totalGenerated,
+      totalSent,
+      totalReactions,
+      totalDeals,
+      reactionRate,
+      dealRate,
+      avgDaysToReact,
+    }
+  }, [filteredLetters, filteredReactions])
+
+  // ランキング計算
   function computeRanking(
-    groupFn: (l: (typeof allLetters extends (infer T)[] | null ? T : never)) => string | null,
-    filterReacted: (type: string) => boolean = (t) => ['返信あり', '商談化'].includes(t),
-  ): RankItem[] {
+    groupFn: (l: LetterData) => string | null,
+  ) {
     const groups = new Map<string, { sent: number; reacted: number }>()
-    for (const l of allLetters ?? []) {
+    const sentLetters = filteredLetters.filter(l => l.sent_at)
+    for (const l of sentLetters) {
       const key = groupFn(l)
       if (!key) continue
       const g = groups.get(key) ?? { sent: 0, reacted: 0 }
       g.sent++
-      const rt = reactionMap.get(l.id)
-      if (rt && filterReacted(rt)) g.reacted++
+      const r = filteredReactionMap.get(l.id)
+      if (r && ['返信あり', '商談化'].includes(r.reaction_type)) g.reacted++
       groups.set(key, g)
     }
     return Array.from(groups.entries())
@@ -89,159 +185,131 @@ export default async function DashboardPage() {
         reacted: v.reacted,
       }))
       .sort((a, b) => parseFloat(b.rate) - parseFloat(a.rate))
-      .slice(0, 3)
+      .slice(0, 5)
   }
 
-  // Why You別反応率トップ3
-  const whyYouRanking = computeRanking((l) => l.why_you_angle)
+  const whyYouRanking = useMemo(() => computeRanking(l => l.why_you_angle), [filteredLetters, filteredReactionMap])
+  const triggerRanking = useMemo(() => computeRanking(l => l.send_trigger), [filteredLetters, filteredReactionMap])
+  const industryRanking = useMemo(() => computeRanking(l => {
+    return l.company_id ? (industryMap.get(l.company_id) ?? null) : null
+  }), [filteredLetters, filteredReactionMap, industryMap])
 
-  // トリガー別反応率トップ3
-  const triggerRanking = computeRanking((l) => l.send_trigger)
+  // 反応種別の内訳
+  const reactionBreakdown = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const r of filteredReactions) {
+      counts.set(r.reaction_type, (counts.get(r.reaction_type) ?? 0) + 1)
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+  }, [filteredReactions])
 
-  // 業種別反応率トップ3
-  const industryRanking = computeRanking((l) => {
-    const contact = Array.isArray(l.contacts) ? l.contacts[0] : l.contacts
-    const companyId = contact?.company_id
-    return companyId ? (industryMap.get(companyId) ?? null) : null
-  })
+  const selectedProject = projects.find(p => p.id === selectedProjectId)
 
-  // ===== 要アクション（4-3） =====
-  // 送付から14日以上経過・反応記録なし
-  const { data: sentLetters } = await supabase
-    .from('letters')
-    .select('id, sent_at, contacts(full_name, target_companies(name))')
-    .not('sent_at', 'is', null)
-    .lte('sent_at', fourteenDaysAgo)
-    .order('sent_at', { ascending: true })
-    .limit(50)
-
-  const sentLetterIds = (sentLetters ?? []).map(l => l.id)
-  const { data: existingReactions } = sentLetterIds.length > 0
-    ? await supabase.from('reactions').select('letter_id').in('letter_id', sentLetterIds)
-    : { data: [] }
-  const reactedLetterIds = new Set((existingReactions ?? []).map(r => r.letter_id))
-
-  const noReactionLetters = (sentLetters ?? [])
-    .filter(l => !reactedLetterIds.has(l.id))
-    .slice(0, 5)
-
-  // 次回アクション期日超過
-  const { data: overdueActions } = await supabase
-    .from('reactions')
-    .select('id, next_action, next_action_date, letter_id, letters(contacts(full_name))')
-    .not('next_action', 'is', null)
-    .not('next_action_date', 'is', null)
-    .lte('next_action_date', today)
-    .order('next_action_date', { ascending: true })
-    .limit(5)
-
-  // 情報取得から180日超のコンタクト
-  const { data: staleContacts } = await supabase
-    .from('contacts')
-    .select('id, full_name, info_acquired_at, target_companies(name)')
-    .eq('is_active', true)
-    .not('info_acquired_at', 'is', null)
-    .lte('info_acquired_at', sixMonthsAgo)
-    .order('info_acquired_at', { ascending: true })
-    .limit(5)
+  if (loading) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold text-neutral-900">ダッシュボード</h1>
+        <p className="mt-8 text-sm text-neutral-500">読み込み中...</p>
+      </div>
+    )
+  }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-neutral-900">ダッシュボード</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-neutral-900">ダッシュボード</h1>
+        <select
+          value={selectedProjectId}
+          onChange={(e) => setSelectedProjectId(e.target.value)}
+          className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm text-neutral-900"
+        >
+          <option value="all">全プロジェクト</option>
+          {projects.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name}{p.client_name ? ` (${p.client_name})` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {selectedProject && (
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-sm text-neutral-500">
+            切り口: {selectedProject.why_you_angle ?? '-'}
+          </span>
+          <Link
+            href={`/projects/${selectedProject.id}`}
+            className="text-xs text-neutral-500 hover:text-neutral-900 hover:underline"
+          >
+            プロジェクト詳細 →
+          </Link>
+        </div>
+      )}
 
       {/* 今月の実績 KPIカード */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard label="送付数" value={`${sent}通`} />
-        <KPICard label="反応数" value={`${reactions}件`} />
-        <KPICard label="反応率" value={`${reactionRate}%`} />
-        <KPICard label="商談化" value={`${deals}件`} />
+      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KPICard label="送付数" value={`${stats.sentThisMonth}通`} sub="今月" />
+        <KPICard label="反応数" value={`${stats.reactionsThisMonth}件`} sub="今月" />
+        <KPICard label="反応率" value={`${stats.reactionRateThisMonth}%`} sub="今月" />
+        <KPICard label="商談化" value={`${stats.dealsThisMonth}件`} sub="今月" />
       </div>
 
-      {/* インテリジェンスサマリー */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-neutral-900">インテリジェンス</h2>
+      {/* 累計パフォーマンス */}
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <MiniKPI label="生成数" value={`${stats.totalGenerated}`} />
+        <MiniKPI label="送付累計" value={`${stats.totalSent}通`} />
+        <MiniKPI label="反応率" value={`${stats.reactionRate}%`} />
+        <MiniKPI label="商談化率" value={`${stats.dealRate}%`} />
+        <MiniKPI label="平均反応日数" value={stats.avgDaysToReact === '-' ? '-' : `${stats.avgDaysToReact}日`} />
+      </div>
+
+      {/* 反応内訳 */}
+      {reactionBreakdown.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-sm font-semibold text-neutral-900">反応内訳</h2>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {reactionBreakdown.map(([type, count]) => {
+              const colors: Record<string, string> = {
+                '返信あり': 'bg-blue-50 text-blue-700 border-blue-200',
+                '商談化': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                '失注': 'bg-red-50 text-red-600 border-red-200',
+                '無反応': 'bg-neutral-100 text-neutral-500 border-neutral-200',
+                '再送希望': 'bg-amber-50 text-amber-700 border-amber-200',
+              }
+              return (
+                <div key={type} className={`rounded-lg border px-4 py-2 ${colors[type] ?? 'bg-neutral-50 text-neutral-700 border-neutral-200'}`}>
+                  <span className="text-lg font-bold">{count}</span>
+                  <span className="ml-1.5 text-xs font-medium">{type}</span>
+                </div>
+              )
+            })}
+          </div>
         </div>
+      )}
+
+      {/* インテリジェンス */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold text-neutral-900">インテリジェンス</h2>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <RankingCard title="Why You別 反応率" items={whyYouRanking} suffix="%" />
-          <RankingCard title="トリガー別 反応率" items={triggerRanking} suffix="%" />
-          <RankingCard title="業種別 反応率" items={industryRanking} suffix="%" />
+          <RankingCard title="Why You別 反応率" items={whyYouRanking} />
+          <RankingCard title="トリガー別 反応率" items={triggerRanking} />
+          <RankingCard title="業種別 反応率" items={industryRanking} />
         </div>
       </div>
 
-      {/* 要アクション（4-3） */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-neutral-900">要アクション</h2>
-        <div className="mt-4 space-y-3">
-          {/* 14日以上経過・反応なし */}
-          <ActionAlert
-            label={`送付から14日以上経過・反応記録なし: ${noReactionLetters.length > 0 ? noReactionLetters.length + '件' : 'なし'}`}
-            items={noReactionLetters.map((l) => {
-              const contact = Array.isArray(l.contacts) ? l.contacts[0] : l.contacts
-              const company = contact && 'target_companies' in contact
-                ? (Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies)
-                : null
-              return {
-                id: l.id,
-                text: `${(company as { name: string } | null)?.name ?? ''} ${contact?.full_name ?? ''} (送付: ${l.sent_at})`,
-                href: `/letters/${l.id}`,
-              }
-            })}
-          />
-
-          {/* 次回アクション期日超過 */}
-          <ActionAlert
-            label={`次回アクション期日超過: ${(overdueActions ?? []).length > 0 ? (overdueActions ?? []).length + '件' : 'なし'}`}
-            items={(overdueActions ?? []).map((r) => {
-              const letters = Array.isArray(r.letters) ? r.letters[0] : r.letters
-              const contact = letters && 'contacts' in letters
-                ? (Array.isArray(letters.contacts) ? letters.contacts[0] : letters.contacts)
-                : null
-              return {
-                id: r.id,
-                text: `${contact?.full_name ?? ''} - ${r.next_action} (期日: ${r.next_action_date})`,
-                href: `/letters/${r.letter_id}`,
-              }
-            })}
-          />
-
-          {/* 情報取得180日超 */}
-          <ActionAlert
-            label={`情報取得から180日超のコンタクト: ${(staleContacts ?? []).length > 0 ? (staleContacts ?? []).length + '件' : 'なし'}`}
-            items={(staleContacts ?? []).map((c) => {
-              const company = Array.isArray(c.target_companies) ? c.target_companies[0] : c.target_companies
-              return {
-                id: c.id,
-                text: `${(company as { name: string } | null)?.name ?? ''} ${c.full_name} (取得日: ${c.info_acquired_at})`,
-                href: '/contacts',
-              }
-            })}
-          />
-        </div>
-      </div>
-
-      {/* データ資産 */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-neutral-900">データ資産</h2>
-        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
-            <p className="text-2xl font-bold text-neutral-900">{totalSent}通</p>
-            <p className="mt-1 text-xs text-neutral-500">送付累計</p>
-          </div>
-          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
-            <p className="text-2xl font-bold text-neutral-900">{totalCompanies}社</p>
-            <p className="mt-1 text-xs text-neutral-500">取引先数</p>
-          </div>
-          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
-            <p className="text-2xl font-bold text-neutral-900">{reactions}件</p>
-            <p className="mt-1 text-xs text-neutral-500">反応累計</p>
-          </div>
-          <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
-            <p className="text-2xl font-bold text-neutral-900">{deals}件</p>
-            <p className="mt-1 text-xs text-neutral-500">商談化累計</p>
+      {/* データ資産（全体のみ） */}
+      {selectedProjectId === 'all' && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-neutral-900">データ資産</h2>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <DataAsset value={`${stats.totalSent}通`} label="送付累計" />
+            <DataAsset value={`${totalCompanyCount}社`} label="取引先数" />
+            <DataAsset value={`${stats.totalReactions}件`} label="反応累計" />
+            <DataAsset value={`${stats.totalDeals}件`} label="商談化累計" />
           </div>
         </div>
-      </div>
+      )}
 
       {/* CSVエクスポート */}
       <div className="mt-8">
@@ -253,7 +321,64 @@ export default async function DashboardPage() {
           <ExportLink type="analytics" label="分析用フルエクスポート" description="BIツール・AI分析用" />
         </div>
       </div>
+    </div>
+  )
+}
 
+function KPICard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-neutral-500">{label}</p>
+        {sub && <span className="text-xs text-neutral-400">{sub}</span>}
+      </div>
+      <p className="mt-2 text-3xl font-bold text-neutral-900">{value}</p>
+    </div>
+  )
+}
+
+function MiniKPI({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white px-4 py-3">
+      <p className="text-xs text-neutral-500">{label}</p>
+      <p className="mt-1 text-lg font-bold text-neutral-900">{value}</p>
+    </div>
+  )
+}
+
+function RankingCard({ title, items }: { title: string; items: { label: string; rate: string; sent: number; reacted: number }[] }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-5">
+      <h3 className="text-xs font-semibold uppercase text-neutral-500">{title}</h3>
+      {items.length === 0 ? (
+        <p className="mt-3 text-sm text-neutral-400">データなし</p>
+      ) : (
+        <div className="mt-3 space-y-2.5">
+          {items.map((item, i) => (
+            <div key={item.label} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 text-[10px] font-bold text-neutral-600">
+                  {i + 1}
+                </span>
+                <span className="text-sm text-neutral-900">{item.label}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-bold text-neutral-900">{item.rate}%</span>
+                <span className="ml-1 text-xs text-neutral-400">({item.reacted}/{item.sent})</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DataAsset({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 text-center">
+      <p className="text-2xl font-bold text-neutral-900">{value}</p>
+      <p className="mt-1 text-xs text-neutral-500">{label}</p>
     </div>
   )
 }
@@ -271,68 +396,3 @@ function ExportLink({ type, label, description }: { type: string; label: string;
     </a>
   )
 }
-
-function KPICard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-6">
-      <p className="text-sm font-medium text-neutral-500">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-neutral-900">{value}</p>
-    </div>
-  )
-}
-
-function RankingCard({ title, items, suffix }: { title: string; items: RankItem[]; suffix: string }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-5">
-      <h3 className="text-xs font-semibold uppercase text-neutral-500">{title}</h3>
-      {items.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-400">データなし</p>
-      ) : (
-        <div className="mt-3 space-y-2.5">
-          {items.map((item, i) => (
-            <div key={item.label} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 text-[10px] font-bold text-neutral-600">
-                  {i + 1}
-                </span>
-                <span className="text-sm text-neutral-900">{item.label}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold text-neutral-900">{item.rate}{suffix}</span>
-                <span className="ml-1 text-xs text-neutral-400">({item.sent}通)</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ActionAlert({
-  label,
-  items,
-}: {
-  label: string
-  items: { id: string; text: string; href: string }[]
-}) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-      <p className="text-sm font-medium text-neutral-700">{label}</p>
-      {items.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {items.map((item) => (
-            <Link
-              key={item.id}
-              href={item.href}
-              className="block text-xs text-neutral-500 hover:text-neutral-900 hover:underline"
-            >
-              {item.text}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
