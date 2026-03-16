@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { getAnthropicApiKey } from '@/lib/anthropic'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -7,24 +6,33 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const steps: Record<string, unknown> = {}
 
-  // Step 1: APIキー取得
-  let apiKey = ''
+  // Step 1: process.env でAPIキー取得
+  const keyFromEnv = process.env.ANTHROPIC_API_KEY
+  steps.step1_processEnv = keyFromEnv
+    ? { ok: true, length: keyFromEnv.length, prefix: keyFromEnv.slice(0, 12) }
+    : { ok: false, error: 'process.env.ANTHROPIC_API_KEY is empty' }
+
+  // Step 2: getCloudflareContext でAPIキー取得
+  let keyFromCf = ''
   try {
-    apiKey = await getAnthropicApiKey()
-    steps.step1_apiKey = {
-      ok: true,
-      length: apiKey.length,
-      prefix: apiKey.slice(0, 12) + '...',
-    }
+    const { getCloudflareContext } = await import('@opennextjs/cloudflare')
+    const ctx = await getCloudflareContext({ async: true })
+    const env = ctx.env as Record<string, string>
+    keyFromCf = env.ANTHROPIC_API_KEY ?? ''
+    steps.step2_cloudflareCtx = keyFromCf
+      ? { ok: true, length: keyFromCf.length, prefix: keyFromCf.slice(0, 12) }
+      : { ok: false, error: 'ANTHROPIC_API_KEY not in cloudflare env', availableKeys: Object.keys(env).slice(0, 10) }
   } catch (e) {
-    steps.step1_apiKey = {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-    }
+    steps.step2_cloudflareCtx = { ok: false, error: String(e) }
+  }
+
+  const apiKey = keyFromEnv || keyFromCf
+  if (!apiKey) {
+    steps.step3_apiCall = { skipped: true, reason: 'No API key found' }
     return NextResponse.json(steps)
   }
 
-  // Step 2: Anthropic APIへの最小リクエスト
+  // Step 3: Anthropic APIへ最小リクエスト
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -35,43 +43,17 @@ export async function GET() {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 32,
-        messages: [{ role: 'user', content: 'Say "hello" in one word.' }],
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'Say hi' }],
       }),
     })
 
-    const status = res.status
     const body = await res.text()
-
-    if (!res.ok) {
-      steps.step2_apiCall = {
-        ok: false,
-        status,
-        body: body.slice(0, 500),
-      }
-      return NextResponse.json(steps)
-    }
-
-    steps.step2_apiCall = { ok: true, status }
-
-    // Step 3: レスポンスのパース
-    try {
-      const data = JSON.parse(body)
-      const text = data.content?.[0]?.text ?? '(no text)'
-      steps.step3_parse = { ok: true, response: text }
-    } catch (e) {
-      steps.step3_parse = {
-        ok: false,
-        error: e instanceof Error ? e.message : String(e),
-        rawBody: body.slice(0, 300),
-      }
-    }
+    steps.step3_apiCall = res.ok
+      ? { ok: true, status: res.status, response: body.slice(0, 200) }
+      : { ok: false, status: res.status, error: body.slice(0, 500) }
   } catch (e) {
-    steps.step2_apiCall = {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-      type: e instanceof Error ? e.constructor.name : typeof e,
-    }
+    steps.step3_apiCall = { ok: false, error: String(e) }
   }
 
   return NextResponse.json(steps)
