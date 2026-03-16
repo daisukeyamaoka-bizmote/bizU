@@ -170,7 +170,7 @@ bizmote株式会社
     const response = await callClaude({
       model: 'claude-sonnet-4-20250514',
       system: SYSTEM_PROMPT,
-      max_tokens: 4096,
+      max_tokens: 2048,
       messages: [
         { role: 'user', content: userPrompt },
       ],

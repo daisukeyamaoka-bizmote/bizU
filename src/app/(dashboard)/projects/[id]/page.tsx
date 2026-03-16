@@ -35,7 +35,7 @@ type ProjectContact = {
 
 type ResearchProgress = {
   contactId: string
-  step: 'company' | 'person' | 'fit' | 'whyyou' | 'letter' | 'done'
+  step: 'company' | 'person' | 'fit' | 'whyyou' | 'letter' | 'done' | 'error'
   stepLabel: string
 }
 
@@ -277,6 +277,17 @@ export default function ProjectDetailPage() {
     loadProject()
   }
 
+  /** タイムアウト付きfetch */
+  async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      return await fetch(url, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   // ===== メインパイプライン: 選択した5社のディープリサーチ＋手紙生成 =====
   async function runPipeline() {
     if (!project || selectedIds.size === 0) return
@@ -329,8 +340,8 @@ export default function ProjectDetailPage() {
 
       let deepResearch = null
       try {
-        // Step 1: Web検索リサーチ
-        const researchRes = await fetch('/api/deep-research', {
+        // Step 1: Web検索リサーチ（90秒タイムアウト）
+        const researchRes = await fetchWithTimeout('/api/deep-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -340,21 +351,25 @@ export default function ProjectDetailPage() {
             contactTitle: pc.title,
             contactDepartment: pc.department,
           }),
-        })
+        }, 90000)
 
         let researchData = null
         if (researchRes.ok) {
           researchData = await researchRes.json()
-          if (researchData.error) researchData = null
+          if (researchData.error) {
+            console.error('[deep-research] research returned error:', researchData.error)
+            researchData = null
+          }
         } else {
-          console.error('[deep-research] research error:', researchRes.status)
+          const errText = await researchRes.text().catch(() => '')
+          console.error('[deep-research] research error:', researchRes.status, errText)
         }
 
-        updateProgress(pc.contact_id, 'fit', 'リサーチ結果を分析中...')
-
         if (researchData) {
-          // Step 2: 分析（プロダクト適合性 + Why You）
-          const analyzeRes = await fetch('/api/deep-research', {
+          updateProgress(pc.contact_id, 'fit', 'リサーチ結果を分析中...')
+
+          // Step 2: 分析（プロダクト適合性 + Why You）（60秒タイムアウト）
+          const analyzeRes = await fetchWithTimeout('/api/deep-research', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -368,21 +383,19 @@ export default function ProjectDetailPage() {
               personResearch: researchData.personResearch ?? '',
               knowledgeContext,
             }),
-          })
+          }, 60000)
 
           updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
 
           if (analyzeRes.ok) {
             const analyzeData = await analyzeRes.json()
             if (!analyzeData.error) {
-              deepResearch = {
-                ...researchData,
-                ...analyzeData,
-              }
+              deepResearch = { ...researchData, ...analyzeData }
+            } else {
+              deepResearch = researchData
             }
           } else {
             console.error('[deep-research] analyze error:', analyzeRes.status)
-            // リサーチ結果だけでも使う
             deepResearch = researchData
           }
         }
@@ -404,8 +417,9 @@ export default function ProjectDetailPage() {
 
       const company = Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies
 
+      let letterGenerated = false
       try {
-        const res = await fetch('/api/generate-letter', {
+        const res = await fetchWithTimeout('/api/generate-letter', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -423,45 +437,55 @@ export default function ProjectDetailPage() {
             knowledgeContext,
             deepResearch,
           }),
-        })
+        }, 90000)
+
         if (!res.ok) {
-          console.error('[generate-letter] API error:', res.status, await res.text())
-          continue
-        }
-        const data = await res.json()
+          const errText = await res.text().catch(() => '')
+          console.error('[generate-letter] API error:', res.status, errText)
+        } else {
+          const data = await res.json()
 
-        if (data.letter) {
-          const { data: letter } = await supabase.from('letters').insert({
-            client_id: project.client_id,
-            contact_id: pc.contact_id,
-            project_id: projectId,
-            why_you_angle: project.why_you_angle ?? '採用強化',
-            send_trigger: project.send_trigger ?? null,
-            body_text: data.letter,
-            hypothesis: data.title ?? null,
-            collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
-            sources: data.sources ?? null,
-          }).select('id').single()
+          if (data.letter) {
+            const { data: letter } = await supabase.from('letters').insert({
+              client_id: project.client_id,
+              contact_id: pc.contact_id,
+              project_id: projectId,
+              why_you_angle: project.why_you_angle ?? '採用強化',
+              send_trigger: project.send_trigger ?? null,
+              body_text: data.letter,
+              hypothesis: data.title ?? null,
+              collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
+              sources: data.sources ?? null,
+            }).select('id').single()
 
-          if (letter) {
-            await supabase
-              .from('project_contacts')
-              .update({ status: 'generated', letter_id: letter.id })
-              .eq('id', pc.id)
+            if (letter) {
+              await supabase
+                .from('project_contacts')
+                .update({ status: 'generated', letter_id: letter.id })
+                .eq('id', pc.id)
+              letterGenerated = true
+            }
           }
         }
       } catch (err) {
         console.error('[generate-letter] Exception:', err)
-        // 個別エラー時は次へ進む
       }
 
-      updateProgress(pc.contact_id, 'done', '完了')
+      if (letterGenerated) {
+        updateProgress(pc.contact_id, 'done', '完了')
+      } else {
+        updateProgress(pc.contact_id, 'error', '手紙生成に失敗しました')
+      }
     }
 
-    const successCount = pipelineProgress.filter(p => p.step === 'done').length + 1
     setPipelineRunning(false)
     setSelectedIds(new Set())
-    setToast({ message: `${targets.length}社の手紙生成が完了しました！`, type: 'success' })
+    const errorCount = pipelineProgress.filter(p => p.step === 'error').length
+    if (errorCount > 0) {
+      setToast({ message: `${targets.length - errorCount}社成功、${errorCount}社失敗`, type: 'error' })
+    } else {
+      setToast({ message: `${targets.length}社の手紙生成が完了しました！`, type: 'success' })
+    }
     notify('手紙生成完了', `${targets.length}社のリサーチ＋手紙生成が完了しました`)
     loadContacts()
     loadProject()
@@ -719,6 +743,7 @@ export default function ProjectDetailPage() {
           whyyou: 80,
           letter: 90,
           done: 100,
+          error: 0,
         }
         const completedCount = pipelineProgress.filter(p => p.step === 'done').length
         const currentItem = pipelineProgress.find(p => p.step !== 'done')
@@ -760,9 +785,9 @@ export default function ProjectDetailPage() {
                   <div key={p.contactId} className="rounded-lg bg-neutral-50 px-4 py-3">
                     <div className="flex items-center gap-4">
                       <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                        p.step === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-200 text-neutral-700'
+                        p.step === 'done' ? 'bg-emerald-100 text-emerald-700' : p.step === 'error' ? 'bg-red-100 text-red-700' : 'bg-neutral-200 text-neutral-700'
                       }`}>
-                        {p.step === 'done' ? '✓' : `${pct}%`}
+                        {p.step === 'done' ? '✓' : p.step === 'error' ? '!' : `${pct}%`}
                       </span>
                       <div className="flex-1">
                         <p className="text-sm font-medium text-neutral-900">
