@@ -46,25 +46,48 @@ export async function callClaude(options: {
     body.system = options.system
   }
 
-  const res = await fetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const errorBody = await res.text()
-    throw new Error(`Anthropic API error (${res.status}): ${errorBody}`)
-  }
-
-  return res.json() as Promise<AnthropicResponse>
+  return fetchWithRetry(apiKey, body) as Promise<AnthropicResponse>
 }
 
 export function getTextFromResponse(response: AnthropicResponse): string {
   const textBlock = response.content.find(c => c.type === 'text')
   return textBlock?.text ?? ''
+}
+
+/** 429レート制限時に指数バックオフでリトライ */
+async function fetchWithRetry(
+  apiKey: string,
+  body: Record<string, unknown>,
+  maxRetries = 4,
+): Promise<unknown> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (res.ok) {
+      return res.json()
+    }
+
+    if (res.status === 429 && attempt < maxRetries) {
+      const retryAfter = res.headers.get('retry-after')
+      const waitMs = retryAfter
+        ? parseInt(retryAfter, 10) * 1000
+        : Math.min(2000 * Math.pow(2, attempt), 60000)
+      console.log(`[anthropic] Rate limited, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`)
+      await new Promise(resolve => setTimeout(resolve, waitMs))
+      continue
+    }
+
+    const errorBody = await res.text()
+    throw new Error(`Anthropic API error (${res.status}): ${errorBody}`)
+  }
+
+  throw new Error('Anthropic API: max retries exceeded')
 }

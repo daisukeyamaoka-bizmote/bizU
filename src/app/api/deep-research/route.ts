@@ -52,6 +52,9 @@ export async function POST(request: Request) {
 - 人事専任のCHROがいない企業でCFOや管理本部長が人事を兼務している場合、その人が本当に適切な宛先か検討する
 - CFO兼任の場合、本人が人事・採用について具体的にインタビュー等で語っているかを確認する`, 8)
 
+    // レート制限回避: API呼び出し間にディレイを挿入
+    await new Promise(r => setTimeout(r, 5000))
+
     // Step 2: 企業リサーチ
     const companyResearch = await webSearchClaude(apiKey, `以下の日本企業について、ABM営業手紙作成に必要な情報をWebで検索してまとめてください。ソースは直近半年以内に限定してください。
 
@@ -80,6 +83,8 @@ export async function POST(request: Request) {
 
 各項目は具体的な数値と出典情報（URL含む）を含めてください。情報がない項目はスキップ。
 必ずWebで検索してから回答してください。`, 8)
+
+    await new Promise(r => setTimeout(r, 5000))
 
     // Step 3: 宛先個人リサーチ（最も重要）
     const personResearch = await webSearchClaude(apiKey, `以下の人物について、最新の情報をWebで検索してまとめてください。ソースは直近半年以内を優先してください。
@@ -113,6 +118,8 @@ export async function POST(request: Request) {
 具体的な記事タイトル、日付、URLを含めてください。情報がない項目はスキップ。
 必ずWebで検索してから回答してください。`, 8)
 
+    await new Promise(r => setTimeout(r, 5000))
+
     // Step 4: プロダクト適合性分析（Claude通常呼び出し、Web検索不要）
     let productFitAnalysis = ''
     if (knowledgeContext && knowledgeContext.length > 0) {
@@ -143,6 +150,8 @@ ${knowledgeText}
 
 簡潔かつ具体的に。`)
     }
+
+    await new Promise(r => setTimeout(r, 5000))
 
     // Step 5: Why You 分析
     const whyYouAnalysis = await callClaudeText(apiKey, `あなたはBtoB営業のパーソナライゼーション専門家です。
@@ -193,63 +202,74 @@ ${productFitAnalysis ? `【プロダクト適合性分析】\n${productFitAnalys
   }
 }
 
-/** Web Search付きClaude呼び出し */
-async function webSearchClaude(apiKey: string, prompt: string, maxSearchUses = 5): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
-      tools: [
-        {
-          type: 'web_search_20250305',
-          name: 'web_search',
-          max_uses: maxSearchUses,
-        },
-      ],
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
+/** 429レート制限時に指数バックオフでリトライ */
+async function fetchWithRetry(
+  apiKey: string,
+  body: Record<string, unknown>,
+  maxRetries = 4,
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    })
 
-  if (!res.ok) {
+    if (res.ok) {
+      return res.json() as Promise<Record<string, unknown>>
+    }
+
+    if (res.status === 429 && attempt < maxRetries) {
+      const retryAfter = res.headers.get('retry-after')
+      const waitMs = retryAfter
+        ? parseInt(retryAfter, 10) * 1000
+        : Math.min(2000 * Math.pow(2, attempt), 60000)
+      console.log(`[deep-research] Rate limited, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`)
+      await new Promise(resolve => setTimeout(resolve, waitMs))
+      continue
+    }
+
     const errorBody = await res.text()
     throw new Error(`Anthropic API error (${res.status}): ${errorBody}`)
   }
+  throw new Error('Anthropic API: max retries exceeded')
+}
 
-  const data = await res.json()
-  const textBlocks = (data.content ?? [])
-    .filter((c: { type: string }) => c.type === 'text')
-    .map((c: { text: string }) => c.text)
+/** Web Search付きClaude呼び出し */
+async function webSearchClaude(apiKey: string, prompt: string, maxSearchUses = 5): Promise<string> {
+  const data = await fetchWithRetry(apiKey, {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2048,
+    tools: [
+      {
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: maxSearchUses,
+      },
+    ],
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  const content = (data.content ?? []) as Array<{ type: string; text?: string }>
+  const textBlocks = content
+    .filter((c) => c.type === 'text')
+    .map((c) => c.text ?? '')
   return textBlocks.join('\n') || ''
 }
 
 /** 通常Claude呼び出し（Web検索なし） */
 async function callClaudeText(apiKey: string, prompt: string): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  const data = await fetchWithRetry(apiKey, {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
   })
 
-  if (!res.ok) {
-    const errorBody = await res.text()
-    throw new Error(`Anthropic API error (${res.status}): ${errorBody}`)
-  }
-
-  const data = await res.json()
-  const textBlock = (data.content ?? []).find((c: { type: string }) => c.type === 'text')
+  const content = (data.content ?? []) as Array<{ type: string; text?: string }>
+  const textBlock = content.find((c) => c.type === 'text')
   return textBlock?.text ?? ''
 }
