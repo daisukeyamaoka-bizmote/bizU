@@ -660,44 +660,85 @@ export default function ProjectDetailPage() {
       )}
 
       {/* パイプライン進捗 */}
-      {pipelineRunning && (
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
-          <h2 className="text-lg font-semibold text-neutral-900">
-            リサーチ＋手紙生成中（{pipelineCurrentIdx}/{pipelineTotal}）
-          </h2>
-          <div className="mt-4 space-y-3">
-            {pipelineProgress.map((p) => {
-              const pc = contacts.find(c => c.contact_id === p.contactId)
-              const stepIcons: Record<string, string> = {
-                company: '1/5',
-                person: '2/5',
-                fit: '3/5',
-                whyyou: '4/5',
-                letter: '5/5',
-                done: '---',
-              }
-              return (
-                <div key={p.contactId} className="flex items-center gap-4 rounded-lg bg-neutral-50 px-4 py-3">
-                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                    p.step === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-200 text-neutral-700'
-                  }`}>
-                    {stepIcons[p.step]}
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-neutral-900">
-                      {pc?.company_name} - {pc?.full_name}
-                    </p>
-                    <p className="text-xs text-neutral-500">{p.stepLabel}</p>
+      {pipelineRunning && (() => {
+        const stepPercent: Record<string, number> = {
+          company: 20,
+          person: 40,
+          fit: 60,
+          whyyou: 80,
+          letter: 90,
+          done: 100,
+        }
+        const completedCount = pipelineProgress.filter(p => p.step === 'done').length
+        const currentItem = pipelineProgress.find(p => p.step !== 'done')
+        const currentStepPct = currentItem ? stepPercent[currentItem.step] ?? 0 : 0
+        const overallPercent = pipelineTotal > 0
+          ? Math.round(((completedCount * 100) + currentStepPct) / pipelineTotal)
+          : 0
+
+        return (
+          <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-neutral-900">
+                リサーチ＋手紙生成中（{pipelineCurrentIdx}/{pipelineTotal}）
+              </h2>
+              <span className="text-2xl font-bold text-neutral-900">{overallPercent}%</span>
+            </div>
+
+            {/* 全体プログレスバー */}
+            <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-neutral-200">
+              <div
+                className="h-full rounded-full bg-neutral-900 transition-all duration-700 ease-out"
+                style={{ width: `${overallPercent}%` }}
+              />
+            </div>
+            <div className="mt-1 flex justify-between text-xs text-neutral-400">
+              <span>{completedCount}社完了 / {pipelineTotal}社</span>
+              <span>
+                {overallPercent < 30 ? '残り約2分' :
+                 overallPercent < 60 ? '残り約1分' :
+                 overallPercent < 90 ? 'もうすぐ完了' : '完了処理中'}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {pipelineProgress.map((p) => {
+                const pc = contacts.find(c => c.contact_id === p.contactId)
+                const pct = stepPercent[p.step] ?? 0
+                return (
+                  <div key={p.contactId} className="rounded-lg bg-neutral-50 px-4 py-3">
+                    <div className="flex items-center gap-4">
+                      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                        p.step === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-200 text-neutral-700'
+                      }`}>
+                        {p.step === 'done' ? '✓' : `${pct}%`}
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-neutral-900">
+                          {pc?.company_name} - {pc?.full_name}
+                        </p>
+                        <p className="text-xs text-neutral-500">{p.stepLabel}</p>
+                      </div>
+                      {p.step === 'done' && (
+                        <span className="text-xs font-medium text-emerald-600">完了</span>
+                      )}
+                    </div>
+                    {/* 個別プログレスバー */}
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ease-out ${
+                          p.step === 'done' ? 'bg-emerald-500' : 'bg-neutral-900'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  {p.step === 'done' && (
-                    <span className="text-xs font-medium text-emerald-600">完了</span>
-                  )}
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* 対象者追加パネル */}
       {showUpload && (

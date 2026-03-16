@@ -62,37 +62,19 @@ export default function LettersPage() {
   async function loadLetters() {
     const supabase = createClient()
 
-    // Try full query first, fallback to minimal columns on any error
-    let data = null
-    const { data: d1, error: e1 } = await supabase
+    const { data, error: queryError } = await supabase
       .from('letters')
       .select(`
-        id, sent_at, why_you_angle, is_approved, approved_by, body_text, hypothesis, created_at,
+        id, sent_at, why_you_angle, body_text, hypothesis, created_at,
         contacts(full_name, department, title, target_companies(name)),
         clients(name)
       `)
       .order('created_at', { ascending: false })
       .limit(200)
 
-    if (e1) {
-      console.error('[letters] Full query failed:', e1.message, e1.code, e1.details)
-      // Fallback: use only base schema columns
-      const { data: d2, error: e2 } = await supabase
-        .from('letters')
-        .select(`
-          id, sent_at, why_you_angle, body_text, created_at,
-          contacts(full_name, department, title, target_companies(name)),
-          clients(name)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(200)
-      if (e2) {
-        console.error('[letters] Fallback query also failed:', e2.message, e2.code)
-        setError(`データ取得に失敗しました: ${e2.message}`)
-      }
-      data = d2
-    } else {
-      data = d1
+    if (queryError) {
+      console.error('[letters] Query failed:', queryError.message, queryError.code)
+      setError(`データ取得に失敗しました: ${queryError.message}`)
     }
     console.log('[letters] Loaded', data?.length ?? 0, 'letters')
 
@@ -127,6 +109,7 @@ export default function LettersPage() {
         reaction_id: reaction?.id ?? null,
         is_approved: l.is_approved ?? false,
         approved_by: l.approved_by ?? null,
+        // Note: is_approved/approved_by may not exist if 006 migration hasn't been run
         created_at: l.created_at,
       }
     })
