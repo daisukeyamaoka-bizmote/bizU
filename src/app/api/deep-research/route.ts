@@ -4,114 +4,28 @@ import { getAnthropicApiKey } from '@/lib/anthropic'
 export const dynamic = 'force-dynamic'
 
 /**
- * Deep Research API - ABMワークフロー準拠（2ステップ統合版）
+ * Deep Research API - ステップ分割版
  *
- * Step 1: Web検索で包括的リサーチ（役職確認・企業・人物を1回で）
- * Step 2: 分析（プロダクト適合性 + Why You を1回で）
+ * step=research: Web検索リサーチ（役職確認・企業・人物）
+ * step=analyze:  分析（プロダクト適合性 + Why You）
+ *
+ * フロントエンドが各ステップを順番に呼び出す。
+ * 各呼び出しは短時間で完了し、Workersタイムアウトを回避。
  */
 export async function POST(request: Request) {
   try {
-    const {
-      companyName,
-      contactName,
-      contactTitle,
-      contactDepartment,
-      knowledgeContext,
-    } = await request.json()
+    const body = await request.json()
+    const { step } = body
 
     const apiKey = await getAnthropicApiKey()
 
-    // Step 1: 包括的Web検索リサーチ（役職確認 + 企業 + 人物を1回で実行）
-    const researchResult = await webSearchClaude(apiKey, `あなたはABM営業のためのディープリサーチャーです。以下の企業・人物について包括的にWebで検索し、情報をまとめてください。
-
-【対象】
-企業名: ${companyName}
-氏名: ${contactName}
-登録役職: ${contactTitle ?? '不明'}
-部署: ${contactDepartment ?? '不明'}
-
-以下の3つのセクションに分けて報告してください:
-
-===== セクション1: 役職の最新確認 =====
-- ${companyName}の公式サイトで${contactName}の現在の役職を確認
-- 直近の人事異動ニュースで異動・退任・昇格がないか確認
-- 現在の役職、役職変更有無、宛先適切性を報告
-
-===== セクション2: 企業リサーチ =====
-- 中期経営計画・重点戦略
-- 採用体制（新卒/中途、採用人数）
-- 人事戦略・人的資本経営の取り組み
-- 直近のニュース（M&A、決算、組織変更）
-
-===== セクション3: 人物リサーチ =====
-- ${contactName}のインタビュー記事・講演・セミナー登壇
-- 経歴（前職、専門分野、現職就任時期）
-- 本人が語っている課題感・注力テーマ
-- 人事・採用に関する具体的な発言
-
-各項目は具体的な数値と出典URL を含めてください。情報がない項目はスキップ。
-ソースは直近半年以内を優先。必ずWebで検索してから回答してください。`, 15)
-
-    // リサーチ結果をセクション分割
-    const roleVerification = extractSection(researchResult, 'セクション1', 'セクション2')
-    const companyResearch = extractSection(researchResult, 'セクション2', 'セクション3')
-    const personResearch = extractSection(researchResult, 'セクション3', null)
-
-    // Step 2: プロダクト適合性 + Why You 統合分析（Web検索不要）
-    let knowledgeSection = ''
-    if (knowledgeContext && knowledgeContext.length > 0) {
-      const knowledgeText = knowledgeContext
-        .map((k: { category: string; title: string; content: string }) =>
-          `[${k.category}] ${k.title}\n${k.content}`)
-        .join('\n\n')
-      knowledgeSection = `\n【プロダクトナレッジ】\n${knowledgeText}`
+    if (step === 'research') {
+      return await handleResearch(apiKey, body)
+    } else if (step === 'analyze') {
+      return await handleAnalyze(apiKey, body)
+    } else {
+      return NextResponse.json({ error: 'Invalid step' }, { status: 400 })
     }
-
-    const analysis = await callClaudeText(apiKey, `あなたはBtoB営業戦略のエキスパートです。
-以下の情報をもとに、プロダクト適合性分析とWhy You分析を行ってください。
-
-【対象者】
-氏名: ${contactName}
-役職: ${contactTitle ?? ''}
-部署: ${contactDepartment ?? ''}
-企業: ${companyName}
-
-【役職確認結果】
-${roleVerification}
-
-【企業リサーチ】
-${companyResearch}
-
-【人物リサーチ】
-${personResearch}
-${knowledgeSection}
-
-===== Part A: プロダクト適合性分析 =====
-1. 課題仮説: 企業の経営課題に対してプロダクトが解決できること
-2. フィットポイント: 中計や注力テーマとの接点
-3. 推奨事例: ナレッジ内から最適な事例（あれば）
-4. 推奨アプローチ角度
-5. 注意点
-
-===== Part B: Why You分析 =====
-1. Why You: この方にこそ連絡すべき理由
-2. パーソナライズポイント: 手紙に入れるべき固有フック（記事・発言・人事異動等）
-3. 推奨送付トリガー: 今この時期に送る理由
-4. 推奨書き出し: 手紙冒頭のフレーズ案（2-3パターン）
-5. 宛先適切性の判断
-
-簡潔かつ具体的に。`)
-
-    const productFitAnalysis = extractSection(analysis, 'Part A', 'Part B')
-    const whyYouAnalysis = extractSection(analysis, 'Part B', null)
-
-    return NextResponse.json({
-      roleVerification,
-      companyResearch,
-      personResearch,
-      productFitAnalysis,
-      whyYouAnalysis,
-    })
   } catch (error) {
     console.error('Deep research error:', error)
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -122,7 +36,109 @@ ${knowledgeSection}
   }
 }
 
-/** セクション抽出ヘルパー */
+/** Step 1: Web検索リサーチ */
+async function handleResearch(
+  apiKey: string,
+  body: { companyName: string; contactName: string; contactTitle?: string; contactDepartment?: string },
+) {
+  const { companyName, contactName, contactTitle, contactDepartment } = body
+
+  const result = await webSearchClaude(apiKey, `以下の企業・人物について包括的にWeb検索し、情報をまとめてください。
+
+企業名: ${companyName}
+氏名: ${contactName}
+役職: ${contactTitle ?? '不明'}
+部署: ${contactDepartment ?? '不明'}
+
+以下3セクションで報告:
+
+## セクション1: 役職確認
+- 公式サイトで${contactName}の現在の役職を確認
+- 直近の人事異動ニュースを確認
+- 現在の役職、変更有無、宛先適切性
+
+## セクション2: 企業リサーチ
+- 中期経営計画・重点戦略
+- 採用体制
+- 人事戦略・人的資本経営
+- 直近ニュース
+
+## セクション3: 人物リサーチ
+- インタビュー記事・講演
+- 経歴
+- 課題感・注力テーマ
+
+各項目は出典URLを含め、簡潔に。ソースは直近半年以内を優先。`, 5)
+
+  const roleVerification = extractSection(result, 'セクション1', 'セクション2')
+  const companyResearch = extractSection(result, 'セクション2', 'セクション3')
+  const personResearch = extractSection(result, 'セクション3', null)
+
+  return NextResponse.json({
+    roleVerification,
+    companyResearch,
+    personResearch,
+  })
+}
+
+/** Step 2: 分析（Web検索不要） */
+async function handleAnalyze(
+  apiKey: string,
+  body: {
+    companyName: string
+    contactName: string
+    contactTitle?: string
+    contactDepartment?: string
+    roleVerification: string
+    companyResearch: string
+    personResearch: string
+    knowledgeContext?: Array<{ category: string; title: string; content: string }>
+  },
+) {
+  const {
+    companyName, contactName, contactTitle, contactDepartment,
+    roleVerification, companyResearch, personResearch, knowledgeContext,
+  } = body
+
+  let knowledgeSection = ''
+  if (knowledgeContext && knowledgeContext.length > 0) {
+    const knowledgeText = knowledgeContext
+      .map((k) => `[${k.category}] ${k.title}\n${k.content}`)
+      .join('\n\n')
+    knowledgeSection = `\n【プロダクトナレッジ】\n${knowledgeText}`
+  }
+
+  const analysis = await callClaudeText(apiKey, `BtoB営業戦略エキスパートとして分析してください。
+
+【対象者】${contactName} / ${contactTitle ?? ''} / ${contactDepartment ?? ''} / ${companyName}
+
+【役職確認】${roleVerification}
+【企業リサーチ】${companyResearch}
+【人物リサーチ】${personResearch}
+${knowledgeSection}
+
+## Part A: プロダクト適合性
+1. 課題仮説 2. フィットポイント 3. 推奨事例 4. 推奨アプローチ角度 5. 注意点
+
+## Part B: Why You
+1. Why You: この方に連絡すべき理由
+2. パーソナライズポイント: 固有フック（記事・発言等）
+3. 推奨送付トリガー
+4. 推奨書き出し（2-3パターン）
+5. 宛先適切性の判断
+
+簡潔に。`)
+
+  const productFitAnalysis = extractSection(analysis, 'Part A', 'Part B')
+  const whyYouAnalysis = extractSection(analysis, 'Part B', null)
+
+  return NextResponse.json({
+    productFitAnalysis,
+    whyYouAnalysis,
+  })
+}
+
+/** セクション抽出 */
 function extractSection(text: string, startMarker: string, endMarker: string | null): string {
   const startIdx = text.indexOf(startMarker)
   if (startIdx === -1) return endMarker ? '' : text
@@ -138,11 +154,11 @@ function extractSection(text: string, startMarker: string, endMarker: string | n
   return text.slice(contentStart).trim()
 }
 
-/** 429レート制限時に指数バックオフでリトライ */
+/** 429リトライ */
 async function fetchWithRetry(
   apiKey: string,
   body: Record<string, unknown>,
-  maxRetries = 4,
+  maxRetries = 3,
 ): Promise<Record<string, unknown>> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -163,8 +179,7 @@ async function fetchWithRetry(
       const retryAfter = res.headers.get('retry-after')
       const waitMs = retryAfter
         ? parseInt(retryAfter, 10) * 1000
-        : Math.min(2000 * Math.pow(2, attempt), 60000)
-      console.log(`[deep-research] Rate limited, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`)
+        : Math.min(2000 * Math.pow(2, attempt), 30000)
       await new Promise(resolve => setTimeout(resolve, waitMs))
       continue
     }
@@ -175,7 +190,7 @@ async function fetchWithRetry(
   throw new Error('Anthropic API: max retries exceeded')
 }
 
-/** Web Search付きClaude呼び出し */
+/** Web Search付きClaude */
 async function webSearchClaude(apiKey: string, prompt: string, maxSearchUses = 5): Promise<string> {
   const data = await fetchWithRetry(apiKey, {
     model: 'claude-sonnet-4-20250514',
@@ -191,13 +206,10 @@ async function webSearchClaude(apiKey: string, prompt: string, maxSearchUses = 5
   })
 
   const content = (data.content ?? []) as Array<{ type: string; text?: string }>
-  const textBlocks = content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-  return textBlocks.join('\n') || ''
+  return content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n') || ''
 }
 
-/** 通常Claude呼び出し（Web検索なし） */
+/** 通常Claude */
 async function callClaudeText(apiKey: string, prompt: string): Promise<string> {
   const data = await fetchWithRetry(apiKey, {
     model: 'claude-sonnet-4-20250514',

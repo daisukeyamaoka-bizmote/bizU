@@ -324,40 +324,65 @@ export default function ProjectDetailPage() {
       const pc = targets[i]
       setPipelineCurrentIdx(i + 1)
 
-      // Step 1: 役職確認（最重要）
-      updateProgress(pc.contact_id, 'company', '役職の最新情報を確認中...')
+      // Step 1: Web検索リサーチ（役職確認・企業・人物）
+      updateProgress(pc.contact_id, 'company', '役職・企業・人物をリサーチ中...')
 
       let deepResearch = null
       try {
-        // Deep Research API実行（内部で5ステップ: 役職確認→企業リサーチ→人物リサーチ→適合性分析→WhyYou）
-        const researchPromise = fetch('/api/deep-research', {
+        // Step 1: Web検索リサーチ
+        const researchRes = await fetch('/api/deep-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            step: 'research',
             companyName: pc.company_name,
             contactName: pc.full_name,
             contactTitle: pc.title,
             contactDepartment: pc.department,
-            knowledgeContext,
           }),
         })
 
-        // 進捗をシミュレーション表示（実際のAPIは内部でステップ1-3並列＋4-5直列実行）
-        await delay(2000)
-        updateProgress(pc.contact_id, 'company', '企業の中計・採用体制を調査中...')
-        await delay(2000)
-        updateProgress(pc.contact_id, 'person', '担当者のインタビュー・講演情報を調査中...')
-        await delay(2000)
-        updateProgress(pc.contact_id, 'fit', 'プロダクト適合性・事例選定を分析中...')
-        await delay(2000)
-        updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
-
-        const researchRes = await researchPromise
-        if (!researchRes.ok) {
-          console.error('[deep-research] API error:', researchRes.status, await researchRes.text())
+        let researchData = null
+        if (researchRes.ok) {
+          researchData = await researchRes.json()
+          if (researchData.error) researchData = null
         } else {
-          const researchData = await researchRes.json()
-          if (!researchData.error) {
+          console.error('[deep-research] research error:', researchRes.status)
+        }
+
+        updateProgress(pc.contact_id, 'fit', 'リサーチ結果を分析中...')
+
+        if (researchData) {
+          // Step 2: 分析（プロダクト適合性 + Why You）
+          const analyzeRes = await fetch('/api/deep-research', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              step: 'analyze',
+              companyName: pc.company_name,
+              contactName: pc.full_name,
+              contactTitle: pc.title,
+              contactDepartment: pc.department,
+              roleVerification: researchData.roleVerification ?? '',
+              companyResearch: researchData.companyResearch ?? '',
+              personResearch: researchData.personResearch ?? '',
+              knowledgeContext,
+            }),
+          })
+
+          updateProgress(pc.contact_id, 'whyyou', 'Why Youを明確化中...')
+
+          if (analyzeRes.ok) {
+            const analyzeData = await analyzeRes.json()
+            if (!analyzeData.error) {
+              deepResearch = {
+                ...researchData,
+                ...analyzeData,
+              }
+            }
+          } else {
+            console.error('[deep-research] analyze error:', analyzeRes.status)
+            // リサーチ結果だけでも使う
             deepResearch = researchData
           }
         }
@@ -942,8 +967,4 @@ export default function ProjectDetailPage() {
       </div>
     </div>
   )
-}
-
-function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }
