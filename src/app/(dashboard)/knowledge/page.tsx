@@ -986,7 +986,31 @@ export default function KnowledgePage() {
             フォルダ一覧
           </button>
           <span className="text-neutral-400">/</span>
-          <span className="text-neutral-600">{folders.find(f => f.id === openFolderId)?.name ?? ''}</span>
+          {editingFolderId === openFolderId ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={editFolderName}
+                onChange={(e) => setEditFolderName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && renameFolder(openFolderId)}
+                className="rounded border border-neutral-300 px-2 py-0.5 text-sm"
+                autoFocus
+              />
+              <button onClick={() => renameFolder(openFolderId)} className="text-xs text-neutral-900 hover:underline">保存</button>
+              <button onClick={() => setEditingFolderId(null)} className="text-xs text-neutral-400 hover:underline">キャンセル</button>
+            </div>
+          ) : (
+            <span className="flex items-center gap-1.5 text-neutral-600">
+              {folders.find(f => f.id === openFolderId)?.name ?? ''}
+              <button
+                onClick={() => { setEditingFolderId(openFolderId); setEditFolderName(folders.find(f => f.id === openFolderId)?.name ?? '') }}
+                className="rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                title="名前変更"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+              </button>
+            </span>
+          )}
         </div>
       )}
 
