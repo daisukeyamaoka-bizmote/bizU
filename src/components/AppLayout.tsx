@@ -1,18 +1,38 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
+import Sidebar from './Sidebar'
+import { useCurrentClient } from '@/lib/useCurrentClient'
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { loading, hasClient } = useCurrentClient()
+  const router = useRouter()
+  const pathname = usePathname()
+  const [checked, setChecked] = useState(false)
+
+  useEffect(() => {
+    if (loading) return
+    if (!hasClient && pathname !== '/onboarding') {
+      router.replace('/onboarding')
+    } else {
+      setChecked(true)
+    }
+  }, [loading, hasClient, pathname, router])
+
+  if (loading || !checked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-neutral-50">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />
+      </div>
+    )
+  }
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#fafafa' }}>
-      <aside style={{ width: '208px', borderRight: '1px solid #e5e5e5', background: '#fff', padding: '20px' }}>
-        <p style={{ fontWeight: 'bold', fontSize: '17px' }}>bizU</p>
-        <nav style={{ marginTop: '16px' }}>
-          <a href="/" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>ダッシュボード</a>
-          <a href="/contacts" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>取引先管理</a>
-          <a href="/knowledge" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>ナレッジ</a>
-          <a href="/projects" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>手紙作成</a>
-          <a href="/letters" style={{ display: 'block', padding: '6px 0', fontSize: '13px', color: '#525252' }}>手紙管理</a>
-        </nav>
-      </aside>
-      <main style={{ flex: 1, overflow: 'auto' }}>
-        <div style={{ maxWidth: '1152px', margin: '0 auto', padding: '32px' }}>
+    <div className="flex h-screen bg-neutral-50">
+      <Sidebar />
+      <main className="flex-1 overflow-auto">
+        <div className="mx-auto max-w-6xl px-8 py-8">
           {children}
         </div>
       </main>

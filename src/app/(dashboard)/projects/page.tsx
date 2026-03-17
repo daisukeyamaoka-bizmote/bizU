@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { WHY_YOU_ANGLES, SEND_TRIGGERS } from '@/lib/constants'
+import { useCurrentClient } from '@/lib/useCurrentClient'
 
 type ProjectRow = {
   id: string
@@ -21,10 +22,9 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
+  const { client } = useCurrentClient()
 
   // Form
-  const [formClientId, setFormClientId] = useState('')
   const [formName, setFormName] = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [formWhyYou, setFormWhyYou] = useState<string>(WHY_YOU_ANGLES[0])
@@ -33,15 +33,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     loadProjects()
-    loadClients()
   }, [])
-
-  async function loadClients() {
-    const supabase = createClient()
-    const { data } = await supabase.from('clients').select('id, name').eq('status', 'active') as { data: { id: string; name: string }[] | null }
-    setClients(data ?? [])
-    if (data?.[0]) setFormClientId(data[0].id)
-  }
 
   async function loadProjects() {
     const supabase = createClient()
@@ -72,10 +64,11 @@ export default function ProjectsPage() {
   }
 
   async function handleCreate() {
+    if (!client) return
     setSaving(true)
     const supabase = createClient()
     await supabase.from('projects').insert({
-      client_id: formClientId,
+      client_id: client.id,
       name: formName,
       description: formDescription || null,
       why_you_angle: formWhyYou,
@@ -119,18 +112,6 @@ export default function ProjectsPage() {
                 placeholder="2026年3月 製造業向け施策"
                 className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-700">クライアント</label>
-              <select
-                value={formClientId}
-                onChange={(e) => setFormClientId(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
-              >
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700">Why Youの切り口</label>

@@ -50,10 +50,21 @@ const FIELD_OPTIONS: { value: MappingField | 'skip'; label: string }[] = [
 export default function SmartImportPage() {
   const { requestPermission, notify } = useNotification()
 
-  // Request notification permission on mount
+  // Request notification permission on mount & load projects
   useEffect(() => {
     requestPermission()
+    loadProjects()
   }, [requestPermission])
+
+  async function loadProjects() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('projects')
+      .select('id, name')
+      .in('status', ['draft', 'active'])
+      .order('created_at', { ascending: false })
+    setProjects(data ?? [])
+  }
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [fileName, setFileName] = useState('')
@@ -62,6 +73,10 @@ export default function SmartImportPage() {
   const [mapping, setMapping] = useState<Record<string, MappingField | 'skip'>>({})
   const [mappingStatus, setMappingStatus] = useState<Record<string, 'auto' | 'manual' | 'skip'>>({})
   const [aiMapping, setAiMapping] = useState(false)
+
+  // Project selection
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
 
   // Options
   const [excludeSentDays, setExcludeSentDays] = useState(90)
@@ -376,6 +391,7 @@ export default function SmartImportPage() {
     let updated = 0
     let skipped = 0
     const errors: ErrorRow[] = []
+    const importedContactIds: string[] = [] // Track for project_contacts registration
 
     const dupeMap = new Map(duplicates.map(d => [d.rowIndex, d]))
 
@@ -460,6 +476,7 @@ export default function SmartImportPage() {
             errors.push({ rowIndex: i, data: row, reason: `${excelRow}行目: 更新エラー - ${error.message}` })
           } else {
             updated++
+            importedContactIds.push(dupe.existingContact.id)
           }
           continue
         }
@@ -539,7 +556,7 @@ export default function SmartImportPage() {
         info_source: getValue(row, 'info_source') || 'その他',
         info_acquired_at: new Date().toISOString().split('T')[0],
       }
-      const { error } = await supabase.from('contacts').insert(insertData)
+      const { data: insertedContact, error } = await supabase.from('contacts').insert(insertData).select('id').single()
 
       if (error) {
         if (error.code === '23505') {
@@ -549,6 +566,30 @@ export default function SmartImportPage() {
         }
       } else {
         added++
+        if (insertedContact) importedContactIds.push(insertedContact.id)
+      }
+    }
+
+    // Register imported contacts to project_contacts
+    if (selectedProjectId && importedContactIds.length > 0) {
+      setProgress({ current: 0, total: importedContactIds.length, phase: 'プロジェクトにリストを登録中...' })
+      const batchSize = 50
+      for (let i = 0; i < importedContactIds.length; i += batchSize) {
+        const batch = importedContactIds.slice(i, i + batchSize).map(contactId => ({
+          project_id: selectedProjectId,
+          contact_id: contactId,
+          status: 'pending',
+        }))
+        await supabase.from('project_contacts').upsert(batch, { onConflict: 'project_id,contact_id', ignoreDuplicates: true })
+        setProgress({ current: Math.min(i + batchSize, importedContactIds.length), total: importedContactIds.length, phase: 'プロジェクトにリストを登録中...' })
+      }
+      // Update project target_count
+      const { count } = await supabase
+        .from('project_contacts')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', selectedProjectId)
+      if (count !== null) {
+        await supabase.from('projects').update({ target_count: count }).eq('id', selectedProjectId)
       }
     }
 
@@ -650,6 +691,22 @@ export default function SmartImportPage() {
               <p className="mt-2 text-xs text-neutral-400">数秒お待ちください</p>
             </div>
           )}
+
+          {/* Project selection */}
+          <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
+            <h3 className="text-sm font-medium text-neutral-700">プロジェクトに紐付け</h3>
+            <p className="mt-1 text-xs text-neutral-400">インポートしたリストをプロジェクトに自動登録します</p>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="mt-2 block w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+            >
+              <option value="">紐付けしない</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Options */}
           <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
@@ -946,14 +1003,23 @@ export default function SmartImportPage() {
           )}
 
           <div className="mt-6 flex gap-3">
-            <Link
-              href="/contacts"
-              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-            >
-              取引先一覧へ
-            </Link>
+            {selectedProjectId ? (
+              <Link
+                href={`/projects/${selectedProjectId}`}
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+              >
+                プロジェクトへ進む
+              </Link>
+            ) : (
+              <Link
+                href="/contacts"
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+              >
+                取引先一覧へ
+              </Link>
+            )}
             <button
-              onClick={() => { setStep(1); setParsedData([]); setHeaders([]); setMapping({}); setDuplicates([]); setResult(null); setErrorRows([]) }}
+              onClick={() => { setStep(1); setParsedData([]); setHeaders([]); setMapping({}); setDuplicates([]); setResult(null); setErrorRows([]); setSelectedProjectId('') }}
               className="text-sm text-neutral-500 hover:underline"
             >
               続けてインポート

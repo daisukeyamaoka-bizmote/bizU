@@ -56,6 +56,7 @@ export default function LettersPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDownloading, setBulkDownloading] = useState(false)
+  const [bulkSending, setBulkSending] = useState(false)
 
   useEffect(() => {
     loadLetters()
@@ -240,7 +241,26 @@ export default function LettersPage() {
     }
   }
 
+  async function bulkMarkAsSent() {
+    const unsent = Array.from(selectedIds).filter(id => {
+      const letter = letters.find(l => l.id === id)
+      return letter && !letter.sent_at
+    })
+    if (unsent.length === 0) return
+    setBulkSending(true)
+    const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
+    await supabase.from('letters').update({ sent_at: today }).in('id', unsent)
+    setLetters(prev => prev.map(l => unsent.includes(l.id) ? { ...l, sent_at: today } : l))
+    setBulkSending(false)
+    setSelectedIds(new Set())
+  }
+
   const approvedCount = sortedLetters.filter(l => l.is_approved && l.body_text).length
+  const unsentSelectedCount = Array.from(selectedIds).filter(id => {
+    const letter = letters.find(l => l.id === id)
+    return letter && !letter.sent_at
+  }).length
 
   const SortHeader = ({ k, label }: { k: SortKey; label: string }) => (
     <th
@@ -256,16 +276,30 @@ export default function LettersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">手紙管理</h1>
         {selectedIds.size > 0 && (
-          <button
-            onClick={bulkDownload}
-            disabled={bulkDownloading}
-            className="flex items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            {bulkDownloading ? 'ダウンロード中...' : `${selectedIds.size}件を一括DL`}
-          </button>
+          <div className="flex items-center gap-2">
+            {unsentSelectedCount > 0 && (
+              <button
+                onClick={bulkMarkAsSent}
+                disabled={bulkSending}
+                className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                {bulkSending ? '処理中...' : `${unsentSelectedCount}件を送付済みにする`}
+              </button>
+            )}
+            <button
+              onClick={bulkDownload}
+              disabled={bulkDownloading}
+              className="flex items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {bulkDownloading ? 'ダウンロード中...' : `${selectedIds.size}件を一括DL`}
+            </button>
+          </div>
         )}
       </div>
 
