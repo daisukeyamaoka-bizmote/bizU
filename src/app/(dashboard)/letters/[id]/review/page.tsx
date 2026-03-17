@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, Fragment } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -47,6 +47,108 @@ type Letter = {
   } | null
 }
 
+// ソースのfactからキーフレーズを抽出（本文中のマッチに使用）
+function extractKeyPhrases(fact: string): string[] {
+  // 長めのフレーズを優先的に抽出（4文字以上の名詞句・数値表現）
+  const phrases: string[] = []
+
+  // 数値を含む表現（「30%」「100億円」「2024年」等）
+  const numPatterns = fact.match(/[\d,]+[%％万億兆円年月日人社件倍]/g)
+  if (numPatterns) phrases.push(...numPatterns)
+
+  // 鉤括弧内のテキスト
+  const quoted = fact.match(/[「『]([^」』]+)[」』]/g)
+  if (quoted) phrases.push(...quoted.map(q => q.slice(1, -1)))
+
+  // 固有名詞っぽい長い単語（カタカナ4文字以上）
+  const katakana = fact.match(/[ァ-ヶー]{4,}/g)
+  if (katakana) phrases.push(...katakana)
+
+  // 英数字の固有名詞（3文字以上）
+  const english = fact.match(/[A-Za-z][A-Za-z0-9]{2,}/g)
+  if (english) phrases.push(...english)
+
+  // 漢字の連続（3文字以上、一般的すぎない）
+  const kanji = fact.match(/[\u4e00-\u9faf]{3,}/g)
+  if (kanji) {
+    const common = new Set(['それぞれ', 'について', 'における', 'ということ', 'これまで', 'ありません', 'ございます'])
+    phrases.push(...kanji.filter(k => !common.has(k)))
+  }
+
+  return [...new Set(phrases)].slice(0, 5)
+}
+
+// 本文テキスト内でソースのキーフレーズがマッチする位置を検出
+function findMatchPositions(bodyText: string, sources: Source[]): Map<number, { start: number; end: number; sourceIdx: number }[]> {
+  const matches = new Map<number, { start: number; end: number; sourceIdx: number }[]>()
+
+  for (const source of sources) {
+    const phrases = extractKeyPhrases(source.fact)
+    const sourceMatches: { start: number; end: number; sourceIdx: number }[] = []
+
+    for (const phrase of phrases) {
+      let searchFrom = 0
+      while (searchFrom < bodyText.length) {
+        const idx = bodyText.indexOf(phrase, searchFrom)
+        if (idx === -1) break
+        sourceMatches.push({ start: idx, end: idx + phrase.length, sourceIdx: source.index })
+        searchFrom = idx + phrase.length
+      }
+    }
+
+    if (sourceMatches.length > 0) {
+      matches.set(source.index, sourceMatches)
+    }
+  }
+
+  return matches
+}
+
+// 信頼度スコア計算
+function computeTrustScore(source: Source): { score: number; label: string; color: string } {
+  let score = 0
+
+  // URL有無 (30点)
+  if (source.source_url) score += 30
+
+  // 鮮度 (40点)
+  if (source.freshness === 'fresh') score += 40
+  else if (source.freshness === 'caution') score += 20
+  else if (source.freshness === 'stale') score += 5
+
+  // ソース名の信頼性 (20点) - URL/公的機関っぽければ加点
+  const name = (source.source_name ?? '').toLowerCase()
+  if (name.includes('.go.jp') || name.includes('.gov') || name.includes('統計') || name.includes('調査')) score += 20
+  else if (name.includes('.co.jp') || name.includes('.com') || name.includes('日経') || name.includes('公式')) score += 15
+  else if (source.source_name) score += 10
+
+  // 確認済みボーナス (10点)
+  if (source.is_verified) score += 10
+
+  const label = score >= 70 ? '高' : score >= 40 ? '中' : '低'
+  const color = score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444'
+
+  return { score, label, color }
+}
+
+// 全体信頼度サマリー
+function computeOverallTrust(sources: Source[]): { score: number; label: string; color: string; breakdown: string } {
+  if (sources.length === 0) return { score: 0, label: '-', color: '#a3a3a3', breakdown: 'ソースなし' }
+
+  const scores = sources.map(s => computeTrustScore(s).score)
+  const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+
+  const freshCount = sources.filter(s => s.freshness === 'fresh').length
+  const urlCount = sources.filter(s => s.source_url).length
+  const verifiedCount = sources.filter(s => s.is_verified).length
+
+  const label = avg >= 70 ? '高' : avg >= 40 ? '中' : '低'
+  const color = avg >= 70 ? '#10b981' : avg >= 40 ? '#f59e0b' : '#ef4444'
+  const breakdown = `URL有: ${urlCount}/${sources.length} | 鮮度良好: ${freshCount}/${sources.length} | 確認済: ${verifiedCount}/${sources.length}`
+
+  return { score: avg, label, color, breakdown }
+}
+
 export default function ReviewPage() {
   const params = useParams()
   const router = useRouter()
@@ -58,6 +160,10 @@ export default function ReviewPage() {
   const [approving, setApproving] = useState(false)
   const [editingBody, setEditingBody] = useState(false)
   const [editedBody, setEditedBody] = useState('')
+  const [hoveredSourceIdx, setHoveredSourceIdx] = useState<number | null>(null)
+  const [selectedSourceIdx, setSelectedSourceIdx] = useState<number | null>(null)
+
+  const activeSourceIdx = selectedSourceIdx ?? hoveredSourceIdx
 
   const loadLetter = useCallback(async () => {
     const supabase = createClient()
@@ -94,6 +200,20 @@ export default function ReviewPage() {
     loadLetter()
   }, [loadLetter])
 
+  // ハイライト用のマッチ位置を計算
+  const matchPositions = useMemo(() => {
+    if (!letter) return new Map()
+    return findMatchPositions(letter.body_text, sources)
+  }, [letter, sources])
+
+  // 各ソースの信頼度スコア
+  const trustScores = useMemo(() => {
+    return sources.map(s => ({ index: s.index, ...computeTrustScore(s) }))
+  }, [sources])
+
+  // 全体信頼度
+  const overallTrust = useMemo(() => computeOverallTrust(sources), [sources])
+
   function toggleVerified(index: number) {
     setSources(prev => prev.map(s =>
       s.index === index ? { ...s, is_verified: !s.is_verified } : s
@@ -120,7 +240,6 @@ export default function ReviewPage() {
 
     const supabase = createClient()
 
-    // Save sources and approval
     await supabase.from('letters').update({
       sources,
       is_approved: true,
@@ -128,7 +247,6 @@ export default function ReviewPage() {
       approved_at: new Date().toISOString(),
     }).eq('id', letter.id)
 
-    // Download docx
     const contact = letter.contacts
     const company = contact && 'target_companies' in contact
       ? (Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies)
@@ -166,6 +284,47 @@ export default function ReviewPage() {
     router.push(`/letters/${letterId}`)
   }
 
+  // 本文をハイライト付きでレンダリング
+  function renderHighlightedBody(bodyText: string) {
+    if (activeSourceIdx === null || !matchPositions.has(activeSourceIdx)) {
+      return <span>{bodyText}</span>
+    }
+
+    const matches = matchPositions.get(activeSourceIdx)!
+    // マッチをソートして重複を排除
+    const sorted = [...matches].sort((a, b) => a.start - b.start)
+    const merged: { start: number; end: number }[] = []
+    for (const m of sorted) {
+      const last = merged[merged.length - 1]
+      if (last && m.start <= last.end) {
+        last.end = Math.max(last.end, m.end)
+      } else {
+        merged.push({ start: m.start, end: m.end })
+      }
+    }
+
+    const parts: { text: string; highlighted: boolean }[] = []
+    let cursor = 0
+    for (const m of merged) {
+      if (cursor < m.start) parts.push({ text: bodyText.slice(cursor, m.start), highlighted: false })
+      parts.push({ text: bodyText.slice(m.start, m.end), highlighted: true })
+      cursor = m.end
+    }
+    if (cursor < bodyText.length) parts.push({ text: bodyText.slice(cursor), highlighted: false })
+
+    return (
+      <>
+        {parts.map((part, i) =>
+          part.highlighted ? (
+            <mark key={i} className="rounded-sm bg-blue-100 px-0.5 text-blue-900 transition-colors duration-200">{part.text}</mark>
+          ) : (
+            <Fragment key={i}>{part.text}</Fragment>
+          )
+        )}
+      </>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -187,6 +346,9 @@ export default function ReviewPage() {
   const verifiedCount = sources.filter(s => s.is_verified).length
   const personalization = letter.personalization
 
+  // ソースとのマッチ数（本文中に根拠が見つかった数）
+  const matchedSourceCount = sources.filter(s => matchPositions.has(s.index)).length
+
   return (
     <div>
       <div className="flex items-center gap-4">
@@ -201,6 +363,32 @@ export default function ReviewPage() {
           <p className="text-sm font-medium text-emerald-700">
             承認済み — {letter.approved_by} ({letter.approved_at ? new Date(letter.approved_at).toLocaleString('ja-JP') : ''})
           </p>
+        </div>
+      )}
+
+      {/* 信頼度サマリーバー */}
+      {sources.length > 0 && (
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-white px-5 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-neutral-500">根拠信頼度</span>
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: `${overallTrust.color}15`, color: overallTrust.color }}>
+                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                  {overallTrust.score}点 ({overallTrust.label})
+                </span>
+              </div>
+              <span className="text-[10px] text-neutral-400">{overallTrust.breakdown}</span>
+            </div>
+            <div className="flex items-center gap-3 text-[10px] text-neutral-400">
+              <span>本文マッチ: {matchedSourceCount}/{sources.length}件</span>
+              <span>確認済み: {verifiedCount}/{sources.length}件</span>
+            </div>
+          </div>
+          {/* スコアバー */}
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+            <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${overallTrust.score}%`, backgroundColor: overallTrust.color }} />
+          </div>
         </div>
       )}
 
@@ -236,17 +424,20 @@ export default function ReviewPage() {
             </div>
           </div>
 
-          {/* ソースリンク一覧 */}
+          {/* ソースリンク一覧（信頼度スコア付き） */}
           <div className="rounded-lg border border-neutral-200 bg-white">
             <div className="border-b border-neutral-100 px-5 py-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-neutral-900">ソースリンク一覧</h2>
+                <h2 className="text-sm font-semibold text-neutral-900">ソース根拠一覧</h2>
                 {sources.length > 0 && (
                   <span className="text-xs text-neutral-400">
                     {verifiedCount}/{sources.length} 確認済み
                   </span>
                 )}
               </div>
+              <p className="mt-0.5 text-[10px] text-neutral-400">
+                ソースにカーソルを合わせると本文中の対応箇所がハイライトされます
+              </p>
               {sources.length > 0 && !allVerified && !letter.is_approved && (
                 <button
                   onClick={markAllVerified}
@@ -263,45 +454,91 @@ export default function ReviewPage() {
               </div>
             ) : (
               <div className="divide-y divide-neutral-100">
-                {sources.map((source) => (
-                  <div key={source.index} className="px-5 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-neutral-900">{source.fact}</p>
-                        <div className="mt-1">
-                          {source.source_url ? (
-                            <a
-                              href={source.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-blue-600 hover:underline break-all"
-                            >
-                              {source.source_url}
-                            </a>
-                          ) : (
-                            <span className="text-xs text-neutral-400">{source.source_name}</span>
+                {sources.map((source) => {
+                  const trust = trustScores.find(t => t.index === source.index)
+                  const hasMatch = matchPositions.has(source.index)
+                  const isActive = activeSourceIdx === source.index
+
+                  return (
+                    <div
+                      key={source.index}
+                      className={`px-5 py-3 transition-colors duration-150 cursor-pointer ${isActive ? 'bg-blue-50' : 'hover:bg-neutral-50'}`}
+                      onMouseEnter={() => setHoveredSourceIdx(source.index)}
+                      onMouseLeave={() => setHoveredSourceIdx(null)}
+                      onClick={() => setSelectedSourceIdx(prev => prev === source.index ? null : source.index)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          {/* ソース番号 + マッチ表示 */}
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 text-[10px] font-bold text-neutral-600">
+                              {source.index + 1}
+                            </span>
+                            {hasMatch && (
+                              <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-600">
+                                本文にマッチ
+                              </span>
+                            )}
+                            {!hasMatch && (
+                              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
+                                マッチなし
+                              </span>
+                            )}
+                            {/* 鮮度バッジ */}
+                            <FreshnessBadge freshness={source.freshness} fetchedAt={source.fetched_at} />
+                          </div>
+
+                          {/* ファクト */}
+                          <p className="text-sm text-neutral-900">{source.fact}</p>
+
+                          {/* URL */}
+                          <div className="mt-1 flex items-center gap-2">
+                            {source.source_url ? (
+                              <a href={source.source_url} target="_blank" rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:underline break-all" onClick={e => e.stopPropagation()}>
+                                {source.source_url}
+                              </a>
+                            ) : (
+                              <span className="text-xs text-neutral-400">{source.source_name}</span>
+                            )}
+                          </div>
+
+                          {/* 信頼度スコア */}
+                          {trust && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="flex-1">
+                                <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-100">
+                                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${trust.score}%`, backgroundColor: trust.color }} />
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-medium" style={{ color: trust.color }}>
+                                {trust.score}点
+                              </span>
+                            </div>
                           )}
                         </div>
+
+                        {/* チェックボックス */}
+                        {!letter.is_approved && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleVerified(source.index) }}
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-all ${
+                              source.is_verified
+                                ? 'border-emerald-500 bg-emerald-500 text-white'
+                                : 'border-neutral-300 bg-white hover:border-emerald-400'
+                            }`}
+                          >
+                            {source.is_verified && (
+                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                        )}
                       </div>
-                      {!letter.is_approved && (
-                        <button
-                          onClick={() => toggleVerified(source.index)}
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-all ${
-                            source.is_verified
-                              ? 'border-emerald-500 bg-emerald-500 text-white'
-                              : 'border-neutral-300 bg-white hover:border-emerald-400'
-                          }`}
-                        >
-                          {source.is_verified && (
-                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -311,7 +548,14 @@ export default function ReviewPage() {
         <div className="lg:col-span-3">
           <div className="rounded-lg border border-neutral-200 bg-white">
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
-              <h2 className="text-sm font-semibold text-neutral-900">手紙本文</h2>
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-900">手紙本文</h2>
+                {activeSourceIdx !== null && matchPositions.has(activeSourceIdx) && (
+                  <p className="mt-0.5 text-[10px] text-blue-500">
+                    ソース{activeSourceIdx + 1}の根拠箇所をハイライト中
+                  </p>
+                )}
+              </div>
               {!letter.is_approved && !editingBody && (
                 <button
                   onClick={() => setEditingBody(true)}
@@ -330,16 +574,12 @@ export default function ReviewPage() {
                   className="w-full rounded-lg border border-neutral-300 p-4 font-serif text-sm leading-relaxed text-neutral-900"
                 />
                 <div className="mt-3 flex gap-2">
-                  <button
-                    onClick={saveEditedBody}
-                    className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-                  >
+                  <button onClick={saveEditedBody}
+                    className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800">
                     保存
                   </button>
-                  <button
-                    onClick={() => { setEditingBody(false); setEditedBody(letter.body_text) }}
-                    className="text-sm text-neutral-500 hover:underline"
-                  >
+                  <button onClick={() => { setEditingBody(false); setEditedBody(letter.body_text) }}
+                    className="text-sm text-neutral-500 hover:underline">
                     キャンセル
                   </button>
                 </div>
@@ -352,11 +592,45 @@ export default function ReviewPage() {
                   </p>
                 )}
                 <div className="whitespace-pre-wrap font-serif text-sm leading-relaxed text-neutral-900">
-                  {letter.body_text}
+                  {renderHighlightedBody(letter.body_text)}
                 </div>
-                <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-400">
-                  {letter.body_text.length}文字
-                </p>
+
+                {/* ソースマッチサマリー（本文下部） */}
+                {sources.length > 0 && (
+                  <div className="mt-4 border-t border-neutral-100 pt-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-neutral-400">{letter.body_text.length}文字</p>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1">
+                          {sources.map(s => {
+                            const hasMatch = matchPositions.has(s.index)
+                            return (
+                              <button key={s.index}
+                                onMouseEnter={() => setHoveredSourceIdx(s.index)}
+                                onMouseLeave={() => setHoveredSourceIdx(null)}
+                                onClick={() => setSelectedSourceIdx(prev => prev === s.index ? null : s.index)}
+                                className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold transition-all ${
+                                  activeSourceIdx === s.index
+                                    ? 'bg-blue-500 text-white ring-2 ring-blue-200'
+                                    : hasMatch
+                                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                      : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'
+                                }`}>
+                                {s.index + 1}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {selectedSourceIdx !== null && (
+                          <button onClick={() => setSelectedSourceIdx(null)}
+                            className="text-[10px] text-neutral-400 hover:text-neutral-600 hover:underline">
+                            選択解除
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -396,5 +670,19 @@ function PointRow({ label, value }: { label: string; value: string }) {
       <span className="w-20 shrink-0 text-xs font-medium text-neutral-500">{label}</span>
       <span className="text-sm text-neutral-900">{value}</span>
     </div>
+  )
+}
+
+function FreshnessBadge({ freshness, fetchedAt }: { freshness: string; fetchedAt: string }) {
+  const config = {
+    fresh: { label: '最新', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    caution: { label: '注意', bg: 'bg-amber-50', text: 'text-amber-700' },
+    stale: { label: '古い', bg: 'bg-red-50', text: 'text-red-600' },
+  }[freshness] ?? { label: freshness, bg: 'bg-neutral-50', text: 'text-neutral-500' }
+
+  return (
+    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${config.bg} ${config.text}`} title={`取得日: ${fetchedAt}`}>
+      {config.label}
+    </span>
   )
 }
