@@ -2,7 +2,7 @@
 -- ABM Intelligence SaaS MVP
 
 -- テーブル①: clients（クライアント）
-CREATE TABLE clients (
+CREATE TABLE IF NOT EXISTS clients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   product_name TEXT,
@@ -14,7 +14,7 @@ CREATE TABLE clients (
 );
 
 -- テーブル②: case_studies（ケーススタディ）
-CREATE TABLE case_studies (
+CREATE TABLE IF NOT EXISTS case_studies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES clients(id),
   company_name TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE case_studies (
 );
 
 -- テーブル③: target_companies（ターゲット企業）
-CREATE TABLE target_companies (
+CREATE TABLE IF NOT EXISTS target_companies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   industry TEXT NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE target_companies (
 );
 
 -- テーブル④: contacts（コンタクト）
-CREATE TABLE contacts (
+CREATE TABLE IF NOT EXISTS contacts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID REFERENCES target_companies(id),
   full_name TEXT,
@@ -64,7 +64,7 @@ CREATE TABLE contacts (
 );
 
 -- テーブル⑤: letters（手紙履歴）
-CREATE TABLE letters (
+CREATE TABLE IF NOT EXISTS letters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES clients(id),
   contact_id UUID REFERENCES contacts(id),
@@ -82,7 +82,7 @@ CREATE TABLE letters (
 );
 
 -- テーブル⑥: reactions（反応記録）
-CREATE TABLE reactions (
+CREATE TABLE IF NOT EXISTS reactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   letter_id UUID REFERENCES letters(id),
   reaction_type TEXT NOT NULL,
@@ -96,17 +96,17 @@ CREATE TABLE reactions (
 );
 
 -- インデックス設計
-CREATE INDEX idx_letters_client ON letters(client_id);
-CREATE INDEX idx_letters_why_you ON letters(why_you_angle);
-CREATE INDEX idx_letters_trigger ON letters(send_trigger);
-CREATE INDEX idx_letters_sent_at ON letters(sent_at);
-CREATE INDEX idx_reactions_type ON reactions(reaction_type);
-CREATE INDEX idx_contacts_company ON contacts(company_id);
-CREATE INDEX idx_companies_industry ON target_companies(industry);
-CREATE INDEX idx_contacts_name ON contacts(full_name);
+CREATE INDEX IF NOT EXISTS idx_letters_client ON letters(client_id);
+CREATE INDEX IF NOT EXISTS idx_letters_why_you ON letters(why_you_angle);
+CREATE INDEX IF NOT EXISTS idx_letters_trigger ON letters(send_trigger);
+CREATE INDEX IF NOT EXISTS idx_letters_sent_at ON letters(sent_at);
+CREATE INDEX IF NOT EXISTS idx_reactions_type ON reactions(reaction_type);
+CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company_id);
+CREATE INDEX IF NOT EXISTS idx_companies_industry ON target_companies(industry);
+CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(full_name);
 
 -- 分析用ビュー
-CREATE VIEW letter_analytics AS
+CREATE OR REPLACE VIEW letter_analytics AS
 SELECT
   l.id AS letter_id,
   c.name AS client_name,
