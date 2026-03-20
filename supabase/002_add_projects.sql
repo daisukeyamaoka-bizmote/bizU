@@ -1,6 +1,6 @@
 -- プロジェクト（キャンペーン）テーブル
 -- 「ZENKIGENの3月施策」のような単位で対象リスト・文面・送付状況を管理
-CREATE TABLE projects (
+CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES clients(id),
   name TEXT NOT NULL,                        -- プロジェクト名（例: 2026年3月 製造業向け施策）
@@ -19,7 +19,7 @@ CREATE TABLE projects (
 );
 
 -- プロジェクト × コンタクト の中間テーブル（対象リスト管理）
-CREATE TABLE project_contacts (
+CREATE TABLE IF NOT EXISTS project_contacts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
   contact_id UUID REFERENCES contacts(id),
@@ -32,11 +32,11 @@ CREATE TABLE project_contacts (
 );
 
 -- letters テーブルに project_id を追加
-ALTER TABLE letters ADD COLUMN project_id UUID REFERENCES projects(id);
+ALTER TABLE letters ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id);
 
 -- インデックス
-CREATE INDEX idx_projects_client ON projects(client_id);
-CREATE INDEX idx_projects_status ON projects(status);
-CREATE INDEX idx_project_contacts_project ON project_contacts(project_id);
-CREATE INDEX idx_project_contacts_status ON project_contacts(status);
-CREATE INDEX idx_letters_project ON letters(project_id);
+CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_project_contacts_project ON project_contacts(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_contacts_status ON project_contacts(status);
+CREATE INDEX IF NOT EXISTS idx_letters_project ON letters(project_id);

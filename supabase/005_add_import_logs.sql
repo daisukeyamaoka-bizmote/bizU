@@ -1,5 +1,5 @@
 -- Import logs table for tracking import history
-CREATE TABLE import_logs (
+CREATE TABLE IF NOT EXISTS import_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES clients(id),
   file_name TEXT NOT NULL,
@@ -14,4 +14,4 @@ CREATE TABLE import_logs (
 );
 
 -- Track which import batch a contact came from
-ALTER TABLE contacts ADD COLUMN import_log_id UUID REFERENCES import_logs(id);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS import_log_id UUID REFERENCES import_logs(id);

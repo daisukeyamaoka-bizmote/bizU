@@ -1,5 +1,5 @@
 -- ナレッジDB（クライアント/プロダクトごとの営業知識ベース）
-CREATE TABLE knowledge_items (
+CREATE TABLE IF NOT EXISTS knowledge_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES clients(id),
   category TEXT NOT NULL
@@ -16,7 +16,7 @@ CREATE TABLE knowledge_items (
 );
 
 -- プロジェクト × ナレッジ の中間テーブル
-CREATE TABLE project_knowledge (
+CREATE TABLE IF NOT EXISTS project_knowledge (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
   knowledge_id UUID REFERENCES knowledge_items(id) ON DELETE CASCADE,
@@ -24,6 +24,6 @@ CREATE TABLE project_knowledge (
 );
 
 -- インデックス
-CREATE INDEX idx_knowledge_client ON knowledge_items(client_id);
-CREATE INDEX idx_knowledge_category ON knowledge_items(category);
-CREATE INDEX idx_project_knowledge_project ON project_knowledge(project_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_client ON knowledge_items(client_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge_items(category);
+CREATE INDEX IF NOT EXISTS idx_project_knowledge_project ON project_knowledge(project_id);

@@ -1,11 +1,11 @@
 -- ファクトチェック＆承認機能 + プロフィール + 監査ログ
 
 -- letters テーブルにカラム追加
-ALTER TABLE letters ADD COLUMN sources JSONB;            -- ソース情報JSON配列
-ALTER TABLE letters ADD COLUMN is_approved BOOLEAN DEFAULT false;
-ALTER TABLE letters ADD COLUMN approved_by TEXT;          -- 承認者名（表示名コピー）
-ALTER TABLE letters ADD COLUMN approved_by_user_id UUID;  -- 承認者のauth.users ID
-ALTER TABLE letters ADD COLUMN approved_at TIMESTAMPTZ;
+ALTER TABLE letters ADD COLUMN IF NOT EXISTS sources JSONB;            -- ソース情報JSON配列
+ALTER TABLE letters ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT false;
+ALTER TABLE letters ADD COLUMN IF NOT EXISTS approved_by TEXT;          -- 承認者名（表示名コピー）
+ALTER TABLE letters ADD COLUMN IF NOT EXISTS approved_by_user_id UUID;  -- 承認者のauth.users ID
+ALTER TABLE letters ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
 
 -- プロフィールテーブル（Supabase auth.usersと紐付け）
 CREATE TABLE IF NOT EXISTS profiles (
