@@ -35,9 +35,12 @@ type ProjectContact = {
 
 type ResearchProgress = {
   contactId: string
-  step: 'company' | 'person' | 'fit' | 'whyyou' | 'letter' | 'done' | 'error'
+  step: 'company' | 'person' | 'fit' | 'whyyou' | 'letter' | 'checking' | 'done' | 'error'
   stepLabel: string
 }
+
+const PARALLEL_WORKERS = 3
+const MAX_BULK_SELECTION = 100
 
 export default function ProjectDetailPage() {
   const params = useParams()
@@ -193,10 +196,15 @@ export default function ProjectDetailPage() {
     const next = new Set(selectedIds)
     if (next.has(contactId)) {
       next.delete(contactId)
-    } else if (next.size < 5) {
+    } else if (next.size < MAX_BULK_SELECTION) {
       next.add(contactId)
     }
     setSelectedIds(next)
+  }
+
+  function selectAllPending() {
+    const pendingIds = contacts.filter(c => c.status === 'pending').slice(0, MAX_BULK_SELECTION).map(c => c.contact_id)
+    setSelectedIds(new Set(pendingIds))
   }
 
   // 対象者検索
@@ -332,16 +340,14 @@ export default function ProjectDetailPage() {
       .eq('id', project.client_id)
       .single()
 
-    for (let i = 0; i < targets.length; i++) {
-      const pc = targets[i]
-      setPipelineCurrentIdx(i + 1)
+    // 1対象者を処理するワーカー関数（リサーチ→生成→自動チェック）
+    const processOne = async (pc: ProjectContact, idx: number): Promise<'success' | 'error'> => {
+      setPipelineCurrentIdx(idx + 1)
 
-      // Step 1: Web検索リサーチ（役職確認・企業・人物）
       updateProgress(pc.contact_id, 'company', '役職・企業・人物をリサーチ中...')
 
       let deepResearch = null
       try {
-        // Step 1: Web検索リサーチ（90秒タイムアウト）
         const researchRes = await fetchWithTimeout('/api/deep-research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -357,19 +363,12 @@ export default function ProjectDetailPage() {
         let researchData = null
         if (researchRes.ok) {
           researchData = await researchRes.json()
-          if (researchData.error) {
-            console.error('[deep-research] research returned error:', researchData.error)
-            researchData = null
-          }
-        } else {
-          const errText = await researchRes.text().catch(() => '')
-          console.error('[deep-research] research error:', researchRes.status, errText)
+          if (researchData.error) researchData = null
         }
 
         if (researchData) {
           updateProgress(pc.contact_id, 'fit', 'リサーチ結果を分析中...')
 
-          // Step 2: 分析（プロダクト適合性 + Why You）（60秒タイムアウト）
           const analyzeRes = await fetchWithTimeout('/api/deep-research', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -390,22 +389,15 @@ export default function ProjectDetailPage() {
 
           if (analyzeRes.ok) {
             const analyzeData = await analyzeRes.json()
-            if (!analyzeData.error) {
-              deepResearch = { ...researchData, ...analyzeData }
-            } else {
-              deepResearch = researchData
-            }
+            deepResearch = analyzeData.error ? researchData : { ...researchData, ...analyzeData }
           } else {
-            console.error('[deep-research] analyze error:', analyzeRes.status)
             deepResearch = researchData
           }
         }
       } catch (err) {
         console.error('[deep-research] Exception:', err)
-        // リサーチ失敗時も手紙生成は続行
       }
 
-      // Step 5: 手紙生成
       updateProgress(pc.contact_id, 'letter', '手紙を生成中...')
 
       const { data: contact } = await supabase
@@ -414,11 +406,13 @@ export default function ProjectDetailPage() {
         .eq('id', pc.contact_id)
         .single()
 
-      if (!contact) continue
+      if (!contact) return 'error'
 
       const company = Array.isArray(contact.target_companies) ? contact.target_companies[0] : contact.target_companies
 
-      let letterGenerated = false
+      let letterId: string | null = null
+      let letterBody = ''
+      let letterData: { letter?: string; title?: string; sources?: unknown; personalization?: unknown } | null = null
       try {
         const res = await fetchWithTimeout('/api/generate-letter', {
           method: 'POST',
@@ -440,32 +434,29 @@ export default function ProjectDetailPage() {
           }),
         }, 90000)
 
-        if (!res.ok) {
-          const errText = await res.text().catch(() => '')
-          console.error('[generate-letter] API error:', res.status, errText)
-        } else {
-          const data = await res.json()
-
-          if (data.letter) {
+        if (res.ok) {
+          letterData = await res.json()
+          if (letterData?.letter) {
+            letterBody = letterData.letter
             const { data: letter } = await supabase.from('letters').insert({
               client_id: project.client_id,
               contact_id: pc.contact_id,
               project_id: projectId,
               why_you_angle: project.why_you_angle ?? '採用強化',
               send_trigger: project.send_trigger ?? null,
-              body_text: data.letter,
-              hypothesis: data.title ?? null,
+              body_text: letterData.letter,
+              hypothesis: letterData.title ?? null,
               collected_context: deepResearch ? JSON.stringify(deepResearch) : null,
-              sources: data.sources ?? null,
-              personalization: data.personalization ?? null,
+              sources: letterData.sources ?? null,
+              personalization: letterData.personalization ?? null,
             }).select('id').single()
 
             if (letter) {
+              letterId = letter.id
               await supabase
                 .from('project_contacts')
                 .update({ status: 'generated', letter_id: letter.id })
                 .eq('id', pc.id)
-              letterGenerated = true
             }
           }
         }
@@ -473,22 +464,100 @@ export default function ProjectDetailPage() {
         console.error('[generate-letter] Exception:', err)
       }
 
-      if (letterGenerated) {
-        updateProgress(pc.contact_id, 'done', '完了')
-      } else {
+      if (!letterId) {
         updateProgress(pc.contact_id, 'error', '手紙生成に失敗しました')
+        return 'error'
+      }
+
+      // Step: 自動ダブルチェック (4視点)
+      updateProgress(pc.contact_id, 'checking', '自動ダブルチェック中...')
+
+      try {
+        const checkRes = await fetchWithTimeout('/api/auto-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            letterId,
+            letterBody,
+            hypothesis: letterData?.title,
+            whyYouAngle: project.why_you_angle,
+            contactCompany: company?.name ?? '',
+            contactName: contact.full_name,
+            contactTitle: contact.title,
+            sources: letterData?.sources,
+          }),
+        }, 60000)
+
+        if (checkRes.ok) {
+          const checkData = await checkRes.json()
+          if (Array.isArray(checkData.checks)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const rows = checkData.checks.map((c: any) => ({
+              letter_id: letterId,
+              check_type: c.type,
+              status: c.status,
+              score: typeof c.score === 'number' ? c.score : null,
+              summary: c.summary ?? null,
+              findings: c.findings ?? null,
+              suggestion: c.suggestion ?? null,
+              performed_by: 'ai',
+              performed_by_name: 'AI自動チェック',
+            }))
+            // overall結果も1行保存
+            if (typeof checkData.overall_score === 'number') {
+              rows.push({
+                letter_id: letterId,
+                check_type: 'overall',
+                status: checkData.overall_status ?? 'pass',
+                score: checkData.overall_score,
+                summary: `総合スコア ${checkData.overall_score}点`,
+                findings: null,
+                suggestion: null,
+                performed_by: 'ai',
+                performed_by_name: 'AI自動チェック',
+              })
+            }
+            if (rows.length > 0) {
+              await supabase.from('letter_checks').insert(rows)
+            }
+          }
+        } else {
+          console.error('[auto-check] API error:', checkRes.status)
+        }
+      } catch (err) {
+        console.error('[auto-check] Exception:', err)
+      }
+
+      updateProgress(pc.contact_id, 'done', '完了')
+      return 'success'
+    }
+
+    // ワーカープールで並列処理 (3並列)
+    let nextIdx = 0
+    const results: Array<'success' | 'error'> = []
+    const worker = async () => {
+      while (true) {
+        const idx = nextIdx++
+        if (idx >= targets.length) break
+        const result = await processOne(targets[idx], idx)
+        results.push(result)
       }
     }
 
+    await Promise.all(
+      Array.from({ length: Math.min(PARALLEL_WORKERS, targets.length) }, () => worker())
+    )
+
     setPipelineRunning(false)
     setSelectedIds(new Set())
-    const errorCount = pipelineProgress.filter(p => p.step === 'error').length
+    const errorCount = results.filter(r => r === 'error').length
+    const successCount = results.length - errorCount
     if (errorCount > 0) {
-      setToast({ message: `${targets.length - errorCount}社成功、${errorCount}社失敗`, type: 'error' })
+      setToast({ message: `${successCount}社成功、${errorCount}社失敗`, type: 'error' })
     } else {
-      setToast({ message: `${targets.length}社の手紙生成が完了しました！`, type: 'success' })
+      setToast({ message: `${targets.length}社の手紙生成と自動チェックが完了しました！`, type: 'success' })
     }
-    notify('手紙生成完了', `${targets.length}社のリサーチ＋手紙生成が完了しました`)
+    notify('手紙生成完了', `${targets.length}社の生成+自動チェックが完了しました`)
     loadContacts()
     loadProject()
   }
@@ -675,9 +744,19 @@ export default function ProjectDetailPage() {
         </button>
 
         {pendingCount > 0 && !pipelineRunning && (
-          <p className="text-sm text-neutral-500">
-            未生成の対象者にチェックを入れて手紙を作成（最大5社）
-          </p>
+          <>
+            {selectedIds.size === 0 && (
+              <button
+                onClick={selectAllPending}
+                className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                未生成を全選択（最大{MAX_BULK_SELECTION}社）
+              </button>
+            )}
+            <p className="text-sm text-neutral-500">
+              未生成の対象者にチェック → 生成＋自動チェック（3並列・最大{MAX_BULK_SELECTION}社）
+            </p>
+          </>
         )}
       </div>
 
@@ -785,11 +864,12 @@ export default function ProjectDetailPage() {
       {/* パイプライン進捗 */}
       {pipelineRunning && (() => {
         const stepPercent: Record<string, number> = {
-          company: 20,
-          person: 40,
-          fit: 60,
-          whyyou: 80,
-          letter: 90,
+          company: 15,
+          person: 30,
+          fit: 45,
+          whyyou: 60,
+          letter: 75,
+          checking: 90,
           done: 100,
           error: 0,
         }
